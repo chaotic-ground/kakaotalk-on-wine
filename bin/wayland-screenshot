@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""Take a screenshot on a Wayland session, through the desktop portal.
+
+GNOME will not let a program capture the screen behind the user's back. The
+X11 route only ever sees XWayland clients, `org.gnome.Shell.Screenshot` over
+D-Bus answers AccessDenied, and there is no wlr-screencopy on GNOME. The
+portal is the one way in, and it asks the user first -- which is the point of
+it, not a defect.
+
+The reply does not come back from the call. The portal returns a handle and
+then emits Response on it once the user has answered, so this waits on that
+signal.
+
+Usage: wayland-screenshot [-i] [OUTPUT]
+  -i   let the user pick an area or window rather than grabbing the screen
+"""
+import sys
+import gi
+
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio, GLib  # noqa: E402
+
+PORTAL = "org.freedesktop.portal.Desktop"
+PORTAL_PATH = "/org/freedesktop/portal/desktop"
+TOKEN = "wayland_screenshot"
+
+
+def main():
+    args = [a for a in sys.argv[1:] if a != "-i"]
+    interactive = "-i" in sys.argv[1:]
+    dest = args[0] if args else "screenshot.png"
+
+    bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+    # The portal derives the request's object path from our bus name, so it
+    # can be watched before the call is even made.
+    sender = bus.get_unique_name()[1:].replace(".", "_")
+    request_path = f"{PORTAL_PATH}/request/{sender}/{TOKEN}"
+
+    loop = GLib.MainLoop()
+    result = {}
+
+    def on_response(_conn, _sender, _path, _iface, _signal, params):
+        code, results = params.unpack()
+        result["code"] = code
+        result["uri"] = results.get("uri")
+        loop.quit()
+
+    bus.signal_subscribe(
+        PORTAL, "org.freedesktop.portal.Request", "Response", request_path,
+        None, Gio.DBusSignalFlags.NONE, on_response)
+
+    options = {
+        "handle_token": GLib.Variant("s", TOKEN),
+        "interactive": GLib.Variant("b", interactive),
+    }
+    bus.call_sync(
+        PORTAL, PORTAL_PATH, "org.freedesktop.portal.Screenshot", "Screenshot",
+        GLib.Variant("(sa{sv})", ("", options)), None,
+        Gio.DBusCallFlags.NONE, -1, None)
+
+    # No timeout: the dialog waits for a person.
+    loop.run()
+
+    if result.get("code") != 0:
+        print(f"declined or failed (code {result.get('code')})", file=sys.stderr)
+        return 1
+
+    src = Gio.File.new_for_uri(result["uri"])
+    src.copy(Gio.File.new_for_path(dest), Gio.FileCopyFlags.OVERWRITE, None, None, None)
+    print(dest)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

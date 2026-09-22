@@ -1,0 +1,53 @@
+Windows Registry Editor Version 5.00
+
+; Wine picks the Windows UI language when the prefix is first created and then
+; never revisits it, so a prefix born on an en_US host keeps reporting 0409 no
+; matter what LC_ALL says afterwards. 0412 is ko-KR.
+;
+; This matters because KakaoTalk reads the UI language at *install* time: a
+; client installed while the prefix still said 0409 stays English forever,
+; window title included. Apply this before running the installer.
+
+[HKEY_LOCAL_MACHINE\System\CurrentControlSet\Control\Nls\Language]
+"Default"="0412"
+"InstallLanguage"="0412"
+
+; MUI override, for the calls that ask for the preferred UI language list
+; rather than the system default.
+;
+; REG_MULTI_SZ as "ko-KR\0\0" in *8-bit* chars, not UTF-16, even though the
+; header above says 5.00: Bottles hands this file to `reg import` without a
+; BOM, and Wine falls back to reading a BOM-less file as ANSI, so UTF-16 hex
+; would land in the registry as "k\0o\0-\0K\0R\0".
+
+[HKEY_CURRENT_USER\Control Panel\Desktop]
+"PreferredUILanguages"=hex(7):6b,6f,2d,4b,52,00,00
+
+; Point the Korean face names at the one Korean font the prefix actually has.
+;
+; Wine sees the Korean locale and sets "MS Shell Dlg"="Gulim" by itself, but
+; it ships no Gulim, so it lands on a face with no Hangul and everything Wine
+; draws for itself comes out as boxes: the tray tooltip, the tray context
+; menu, message boxes. KakaoTalk is unaffected -- it picks its own fonts --
+; which is why this only shows up around the edges of the app.
+;
+; Substitution is a single lookup, not a chain, so MS Shell Dlg has to be
+; named here too rather than left pointing at Gulim.
+
+[HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\FontSubstitutes]
+"MS Shell Dlg"="NanumGothic"
+"MS Shell Dlg 2"="NanumGothic"
+"Gulim"="NanumGothic"
+"GulimChe"="NanumGothic"
+"Dotum"="NanumGothic"
+"DotumChe"="NanumGothic"
+"Batang"="NanumGothic"
+"BatangChe"="NanumGothic"
+"Malgun Gothic"="NanumGothic"
+; Tahoma is listed for completeness and does nothing. Wine ships its own
+; Tahoma, and substitution only steps in for a face that is missing, so this
+; line loses to Z:\app\share\wine\fonts\tahoma.ttf -- a +font trace of the
+; tray menu shows exactly that. The LOGFONTs under Control Panel\Desktop\
+; WindowMetrics name Tahoma outright, which is why the menu drew boxes for so
+; long; kakaotalk-bottle rewrites the face inside those blobs instead.
+"Tahoma"="NanumGothic"

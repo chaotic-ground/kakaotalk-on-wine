@@ -1,0 +1,44 @@
+#!/bin/bash
+# Stop KakaoTalk, clear Wine's stale monitor record, start it again.
+#
+# This exists because the tray menu is the only way KakaoTalk offers to quit,
+# and that menu is exactly what breaks when the display layout changes while
+# it runs: Wine caches monitor geometry, a monitor coming or going leaves it
+# stale, and the popup then lands nowhere near the pointer -- sometimes on the
+# far side of the screen, which reads as a dead right-click. With no reachable
+# menu there is nothing to restart it with, and restarting alone would not
+# have been enough anyway, which is why this drops the cached record too.
+#
+# Reached from the desktop entry's right-click actions, which GNOME draws
+# itself and Wine cannot spoil.
+set -euo pipefail
+IFS=$'\n\t'
+
+readonly FLATPAK_ID=com.usebottles.bottles
+readonly BOTTLE=KakaoTalk
+readonly PROGRAM=카카오톡
+
+if pgrep -f 'KakaoTalk\.exe' >/dev/null; then
+  pkill -f 'KakaoTalk\.exe' || true
+  # Wait for the prefix to go quiet. A new instance started while the old
+  # wineserver is still winding down tends to exit without a window.
+  for _ in {1..20}; do
+    pgrep -f 'KakaoTalk\.exe' >/dev/null || break
+    sleep 1
+  done
+fi
+
+case ${1-} in
+  --quit) exit 0 ;;
+esac
+
+# Drop Wine's record of the monitors on the way past. A display coming or
+# going leaves it stale -- it goes looking for a monitor it no longer lists
+# and says so, "Failed to find monitor with path DISPLAY\Default_Monitor\
+# 0000&0001" -- and stale is what puts the tray popup on the far side of the
+# screen. Restarting alone does not clear it; the key has to go. Wine builds
+# it again at the next start, no wineboot needed.
+timeout 120 flatpak run --command=bottles-cli "$FLATPAK_ID" shell -b "$BOTTLE" \
+  -i 'reg delete "HKLM\System\CurrentControlSet\Enum\DISPLAY" /f' >/dev/null 2>&1 || true
+
+exec flatpak run --command=bottles-cli "$FLATPAK_ID" run -b "$BOTTLE" -p "$PROGRAM"

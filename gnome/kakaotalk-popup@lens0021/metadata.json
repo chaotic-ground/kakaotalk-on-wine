@@ -1,0 +1,7 @@
+{
+  "uuid": "kakaotalk-popup@lens0021",
+  "name": "KakaoTalk popup placement",
+  "description": "Places KakaoTalk's new-message popup where the app asks for it. Wayland forbids a client from positioning its own windows, so the compositor has to do it on the app's behalf.",
+  "shell-version": ["48", "49"],
+  "version": 1
+}

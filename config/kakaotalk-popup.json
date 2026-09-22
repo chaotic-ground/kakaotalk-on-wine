@@ -1,0 +1,6 @@
+{
+  "log": false,
+  "rules": [
+    {"type": [0], "title": "KakaoTalkShadowWnd", "action": "bottom-right"}
+  ]
+}

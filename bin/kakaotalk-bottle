@@ -1,0 +1,499 @@
+#!/bin/bash
+# Install KakaoTalk, in Korean, into a Bottles bottle.
+#
+# KakaoTalk has no Linux build, so it runs under Wine. This used to be a bare
+# ~/.wine prefix poked by hand out of 2nd-step.md; Bottles keeps the prefix
+# inside its own flatpak data directory instead, which is why every path here
+# goes through ~/.var/app/com.usebottles.bottles rather than $HOME.
+#
+# Four things have to be Korean *before* the installer runs. Each one fails
+# quietly, and differently, when it is missing:
+#
+#   1. The runtime locale. Bottles rides on org.gnome.Platform, whose Locale
+#      extension only carries the host's own language, so on an en_US host
+#      LC_ALL=ko_KR.UTF-8 dies with "cannot change locale" and Wine drops back
+#      to C without saying so.
+#   2. The bottle's locale. Bottles' Language setting is nothing but LC_ALL
+#      for the runner.
+#   3. The Windows UI language in the registry -- see kakaotalk-korean.reg.
+#   4. A Korean font inside the prefix. Wine ships none, so every Hangul glyph
+#      renders as a box until NanumGothic lands in drive_c/windows/Fonts.
+#
+# And KakaoTalk itself only reads the UI language while installing: a client
+# installed against an English prefix stays English afterwards no matter what
+# the prefix says, window title included. Hence the ordering below, and hence
+# --reinstall, which is the way out if the bottle was built in the wrong order.
+#
+# Known limitations that come with the Wayland driver, chosen deliberately --
+# see use_wayland_driver: the tray icon is a floating window rather than a
+# panel icon and its right-click does nothing, and two-finger scroll does not
+# reach the app. New-message popups do appear, which they did not before,
+# though not where the app asks for them.
+#
+# Known limitation: emoji come out as boxes. Not a composition problem --
+# notepad in this prefix draws one box per astral emoji, not two, so the
+# surrogate pairs are being put together correctly and the pairs of boxes in
+# KakaoTalk are the emoji plus its variation selector. What fails is the
+# fallback: the emoji face is installed, Wine loads it, and the SystemLink
+# entries are read at startup, yet missing glyphs never reach it. Tried and
+# didn't help: linking under the substituted name and under the name the app
+# asks for, linking from a face that is not a substitution target at all
+# (Arial, same boxes), and the soda runner. Hangul is unaffected throughout.
+#
+# Known limitation, already chased down once: alt-tab labels the window
+# "Bottles", not 카카오톡. GNOME trusts a window's sandbox identity over the
+# WM_CLASS it claims, so that a sandboxed app cannot pose as another one, and
+# `flatpak run` puts every process in app-flatpak-com.usebottles.bottles-*
+# .scope. The desktop entry below carries a correct StartupWMClass and loses
+# to it anyway. Same reason a game started from flatpak Steam says "Steam".
+# Nothing on this side can change it; the only cure is running Wine outside
+# the flatpak, which costs more than a wrong label in the switcher.
+#
+# Idempotent: re-running fills in only what is missing.
+#
+# Close KakaoTalk before running this. Every registry step starts a wine
+# session against the prefix, and while the app holds the wineserver they
+# crawl, turning a half-minute run into several minutes.
+#
+# Usage: kakaotalk-bottle [--reinstall]
+set -euo pipefail
+IFS=$'\n\t'
+
+readonly FLATPAK_ID=com.usebottles.bottles
+readonly BOTTLE=KakaoTalk
+readonly PROGRAM=카카오톡
+readonly LOCALE=ko_KR
+readonly INSTALLER_URL=https://app-pc.kakaocdn.net/talk/win32/KakaoTalk_Setup.exe
+
+# Wine does no scaling of its own: it renders at whatever DPI the prefix says,
+# and GNOME's xwayland-native-scaling hands XWayland the panel's real pixels,
+# so a 96 DPI prefix is tiny on a 4K screen.
+#
+# 144 = 96 * 1.5, the scale GNOME prefers for the 4K monitor here.
+#
+# Text alone would want more: measured side by side at 176 DPI, GNOME's list
+# rows sat around a 23px em against KakaoTalk's 19px, because KakaoTalk draws
+# its chrome at sizes chosen for a denser Windows UI. But the tray icon hangs
+# off the same number and loses first. Wine sizes it from SM_CXSMICON, which
+# is DPI and nothing else -- it reads no Shell Small Icon Size or any other
+# override -- so 216 DPI hands the panel a 36px icon, the AppIndicator
+# extension drops it into a 16px actor, and it arrives centre-cropped to a
+# brown smear. 144 keeps that icon at 24px, which the extension's icon-size,
+# set to 24 to match, shows whole and at a size that sits with its neighbours.
+#
+# So the two move together: raising this means raising that key, which lives
+# in config/declair.json under dconf, and a tray icon overtopping the rest of
+# the panel is what that buys.
+#
+# Set KAKAOTALK_DPI on a machine that scales differently.
+readonly DPI=${KAKAOTALK_DPI:-144}
+
+# readlink: bin/ scripts get symlinked onto $PATH, and the registry bundle and
+# the download cache both live next to this file in the repo, not next to the
+# symlink.
+REPO="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)"
+readonly REPO
+readonly REG_BUNDLE="$REPO/config/kakaotalk-korean.reg"
+readonly CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/kakaotalk-on-wine"
+readonly INSTALLER="$CACHE/KakaoTalk_Setup.exe"
+
+readonly BOTTLES_DATA="$HOME/.var/app/$FLATPAK_ID/data/bottles"
+readonly PREFIX="$BOTTLES_DATA/bottles/$BOTTLE"
+readonly BOTTLE_CONFIG="$PREFIX/bottle.yml"
+readonly EXE="$PREFIX/drive_c/Program Files (x86)/Kakao/KakaoTalk/KakaoTalk.exe"
+
+reinstall=false
+for arg in "$@"; do
+  case $arg in
+    --reinstall) reinstall=true ;;
+    *) echo "usage: ${0##*/} [--reinstall]" >&2; exit 2 ;;
+  esac
+done
+
+cli() {
+  flatpak run --command=bottles-cli "$FLATPAK_ID" "$@"
+}
+
+step() {
+  echo "==> $*"
+}
+
+# flatpak only fetches the locale subsets matching the host's language, and
+# there is no per-app knob for it -- extra-languages is global.
+ensure_runtime_locale() {
+  local configured
+  configured=$(flatpak config --get extra-languages)
+  [[ $configured == '*unset*' ]] && configured=''
+  if [[ ";$configured;" != *";ko;"* ]]; then
+    step "adding ko to flatpak extra-languages"
+    sudo flatpak config --set extra-languages "${configured:+$configured;}ko"
+  fi
+  # DBUS_SESSION_BUS_ADDRESS: flatpak under sudo otherwise tries to spawn
+  # dbus-launch, which is not installed, and fails before doing any work.
+  step "pulling the ko locale into the Bottles runtime"
+  sudo DBUS_SESSION_BUS_ADDRESS=/dev/null \
+    flatpak update -y --noninteractive org.gnome.Platform.Locale
+}
+
+ensure_bottles() {
+  if ! flatpak info "$FLATPAK_ID" >/dev/null 2>&1; then
+    step "installing Bottles"
+    flatpak install -y --noninteractive flathub "$FLATPAK_ID"
+  fi
+}
+
+ensure_bottle() {
+  if cli list bottles 2>/dev/null | grep -qx -- "- $BOTTLE"; then
+    return
+  fi
+  # sys-wine is the Wine the flatpak already carries, so this needs no extra
+  # download; take whatever version of it is on offer, and only fall back to
+  # another runner if there is none.
+  #
+  # Not just the first runner listed. Bottles will happily hand over soda, and
+  # soda was tried here: it fixes nothing that matters -- emoji still come out
+  # as boxes -- while dressing every window in the old Windows theme and
+  # reporting WM_CLASS as steam_proton, which breaks the StartupWMClass in the
+  # desktop entry. It also logged the account out on the way in.
+  local runner
+  runner=$(cli list components -f runner 2>/dev/null | sed -n 's/^- //p' | grep '^sys-wine' | head -1)
+  if [[ -z $runner ]]; then
+    runner=$(cli list components -f runner 2>/dev/null | sed -n 's/^- //p' | head -1)
+  fi
+  step "creating the $BOTTLE bottle on $runner"
+  cli new --bottle-name "$BOTTLE" --environment application --arch win64 --runner "$runner"
+}
+
+# Bottles turns this into LC_ALL for the runner. bottles-cli has no flag for
+# it, so patch the bottle config; Bottles re-reads the file on every launch.
+set_bottle_locale() {
+  if ! grep -qx "Language: $LOCALE" "$BOTTLE_CONFIG"; then
+    step "setting the bottle locale to $LOCALE"
+    sed -i "s/^Language: .*/Language: $LOCALE/" "$BOTTLE_CONFIG"
+  fi
+}
+
+# Stored in the bottle config and replayed whenever the runner or components
+# change, so a runner swap cannot quietly take the prefix back to English.
+apply_registry_rule() {
+  step "applying the Korean UI language registry rule"
+  # The flatpak cannot see $HOME, so hand it the bundle through the prefix.
+  local staged="$PREFIX/kakaotalk-korean.reg"
+  install -m644 "$REG_BUNDLE" "$staged"
+  cli reg-rules set -b "$BOTTLE" --name korean-locale --bundle "$staged" \
+    --description "Korean Windows UI language" \
+    --triggers runner_change,components
+  cli reg-rules apply -b "$BOTTLE" --rules korean-locale
+  rm -f "$staged"
+}
+
+# bottles-cli writes custom_dpi into the bottle config but does not push it to
+# the registry the way the GUI does, so set both: the config keeps the GUI
+# honest, LogPixels is what Wine actually reads.
+# KakaoTalk asks for its fonts by Korean face name -- skin/default/font/
+# font_ko.xml names 맑은 고딕 throughout -- so the Latin-named substitutions in
+# the .reg bundle never match, and tooltips and menus come out as boxes. These
+# cannot live in the bundle: Bottles hands that file to `reg import` without a
+# BOM, Wine then reads it as CP949, and the UTF-8 bytes arrive as mojibake.
+# Going through reg.exe's argv instead keeps the names intact.
+substitute_korean_fonts() {
+  step "substituting the Korean face names"
+  # One reg import, not one wine session per face: each `bottles-cli reg add`
+  # starts its own session, sixteen of them take minutes, and one that wedges
+  # holds the prefix's wineserver so the app will not start at all afterwards.
+  #
+  # UTF-16LE with a BOM is what makes the Korean names survive. Wine reads a
+  # BOM-less file as CP949 whatever the header claims, which is exactly why
+  # these cannot ride along in the .reg bundle -- Bottles rewrites that one as
+  # UTF-8 on its way to reg.exe.
+  local staged="$PREFIX/korean-fonts.reg"
+  {
+    printf 'Windows Registry Editor Version 5.00\n\n'
+    local key
+    for key in 'HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\FontSubstitutes' \
+               'HKEY_CURRENT_USER\Software\Wine\Fonts\Replacements'; do
+      printf '[%s]\n' "$key"
+      local face
+      for face in "맑은 고딕" "Malgun Gothic" 굴림 굴림체 돋움 돋움체 바탕 바탕체; do
+        printf '"%s"="NanumGothic"\n' "$face"
+      done
+      printf '\n'
+    done
+  } | iconv -f UTF-8 -t UTF-16LE | { printf '\xff\xfe'; cat; } >"$staged"
+  timeout 180 cli shell -b "$BOTTLE" -i "reg import $staged"
+  rm -f "$staged"
+}
+
+# The fonts Wine draws its own chrome with are named in LOGFONT blobs under
+# Control Panel\Desktop\WindowMetrics, and they all say Tahoma. Substitution
+# cannot reach them: Wine ships its own Tahoma, so the requested face exists
+# and both FontSubstitutes and the Replacements key stand aside -- a +font
+# trace of the tray menu shows it loading Z:\app\share\wine\fonts\tahomabd.ttf
+# no matter what those keys say. Tahoma has no Hangul, hence the boxes.
+#
+# So rename the face inside each blob instead. Only the name: the sizes in
+# there follow the DPI set below and are not ours to invent.
+rename_chrome_fonts() {
+  step "pointing the window metrics fonts at NanumGothic"
+  local staged="$PREFIX/window-metrics.reg"
+  python3 - "$PREFIX/user.reg" "$staged" <<'PY'
+import re, struct, sys
+
+src, dest = sys.argv[1], sys.argv[2]
+text = open(src, encoding="utf-8", errors="surrogateescape").read()
+out = ["Windows Registry Editor Version 5.00", "",
+       r"[HKEY_CURRENT_USER\Control Panel\Desktop\WindowMetrics]"]
+
+def read(name):
+    m = re.search(r'"%s"=hex:((?:[0-9a-f,\\\s]+?))\n(?=")' % name, text)
+    if not m:
+        return None
+    return bytearray(int(b, 16) for b in
+                     re.sub(r"[\\\s]", "", m.group(1)).rstrip(",").split(","))
+
+for name in ("CaptionFont", "SmCaptionFont", "MenuFont",
+             "StatusFont", "MessageFont", "IconFont"):
+    blob = read(name)
+    if blob is None:
+        # Wine leaves StatusFont unwritten and falls back to a built-in,
+        # which is how tooltips kept their boxes after the rest were fixed.
+        # MenuFont is the same shape and the same size, so start from it.
+        blob = read("MenuFont")
+    if blob is None:
+        continue
+    # lfFaceName is the last field of LOGFONTW: 32 UTF-16 code units at
+    # offset 28, null padded.
+    face = "NanumGothic"
+    blob[28:28 + 64] = struct.pack("<32H", *([ord(c) for c in face] + [0] * (32 - len(face))))
+    out.append('"%s"=hex:%s' % (name, ",".join("%02x" % b for b in blob)))
+
+out.append("")
+open(dest, "w").write("\n".join(out))
+PY
+  timeout 180 cli shell -b "$BOTTLE" -i "reg import $staged"
+  rm -f "$staged"
+}
+
+# Fall back to an emoji face for the characters NanumGothic has no glyph for.
+#
+# Keyed on the names KakaoTalk actually asks for, never on NanumGothic: Wine
+# drops a SystemLink whose key is itself a substitution target, and says so --
+# "SystemLink entry for substituted font, ignoring" -- so an entry under
+# NanumGothic is thrown away because 맑은 고딕 maps onto it.
+#
+# Monochrome Noto Emoji rather than the colour one, which is a CBDT bitmap
+# font that GDI cannot draw. This does not rescue KakaoTalk's own emoji: those
+# arrive as two boxes each, one per half of the surrogate pair, so they are
+# not being composed into a character at all and no font can answer for them.
+# It covers the symbols that do live in the BMP.
+link_emoji_font() {
+  local src="/usr/share/fonts/google-noto-emoji-fonts/NotoEmoji-Regular.ttf"
+  [[ -f $src ]] || return 0
+  step "linking an emoji fallback"
+  install -m644 -t "$PREFIX/drive_c/windows/Fonts" "$src"
+  local staged="$PREFIX/emoji.reg"
+  python3 - "$staged" <<'PY'
+import sys
+
+def multi_sz(items):
+    data = b"".join(s.encode("utf-16-le") + b"\x00\x00" for s in items) + b"\x00\x00"
+    return ",".join("%02x" % b for b in data)
+
+link = multi_sz(["NotoEmoji-Regular.ttf,Noto Emoji"])
+lines = ["Windows Registry Editor Version 5.00", "",
+         r"[HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Fonts]",
+         '"Noto Emoji (TrueType)"="NotoEmoji-Regular.ttf"', "",
+         r"[HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\FontLink\SystemLink]"]
+for base in ("맑은 고딕", "Malgun Gothic", "Meiryo UI", "Arial", "Tahoma", "System"):
+    lines.append('"%s"=hex(7):%s' % (base, link))
+lines.append("")
+open(sys.argv[1], "w", encoding="utf-16-le").write("﻿" + "\n".join(lines))
+PY
+  timeout 180 cli shell -b "$BOTTLE" -i "reg import $staged"
+  rm -f "$staged"
+}
+
+# Draw through Wine's Wayland driver rather than X11.
+#
+# The default is winex11.drv, which on a Wayland session goes through
+# XWayland, and XWayland cannot see the pointer while it sits over a native
+# Wayland surface. Measured: the position it reports stayed frozen at one
+# coordinate for 35 seconds of moving the mouse. An app that asks where the
+# cursor is before opening a menu gets that frozen answer, which is why the
+# tray popup landed at the far edge of the screen.
+#
+# This is a trade, not a win. What it buys: new-message popups appear at all.
+# What it costs: no Wayland system tray protocol exists, so Wine draws the
+# tray as a floating window whose right-click does nothing -- the desktop
+# entry's actions are the way out now, not a nicety -- and two-finger scroll
+# stops working, which Wine's Wayland driver does not pick up from the
+# touchpad. Emoji are unaffected either way.
+#
+# Popup placement is not fixed by this and cannot be: Wayland forbids a
+# client from positioning its own windows, so an app asking for the bottom
+# right corner does not get it. Set WINE_GRAPHICS=x11 to go back.
+use_wayland_driver() {
+  local driver=${WINE_GRAPHICS:-wayland}
+  step "pointing Wine at the $driver driver"
+  timeout 120 cli reg add -b "$BOTTLE" -k 'HKEY_CURRENT_USER\Software\Wine\Drivers' \
+    -v Graphics -d "$driver" -t REG_SZ
+}
+
+set_dpi() {
+  step "setting the prefix to $DPI DPI"
+  cli edit -b "$BOTTLE" --params "custom_dpi:$DPI"
+  cli reg add -b "$BOTTLE" -k 'HKEY_CURRENT_USER\Control Panel\Desktop' \
+    -v LogPixels -d "$DPI" -t REG_DWORD
+}
+
+install_font() {
+  local dest="$PREFIX/drive_c/windows/Fonts"
+  local regular bold
+  regular=$(fc-match -f '%{file}' NanumGothic)
+  # fc-match answers with *something* whatever it is asked, so check the file
+  # it points at rather than trusting the query.
+  case ${regular##*/} in
+    NanumGothic.ttf) ;;
+    *) echo "NanumGothic missing; dnf install naver-nanum-gothic-fonts" >&2; return 1 ;;
+  esac
+  bold="${regular%/*}/NanumGothicBold.ttf"
+  step "installing NanumGothic into the prefix"
+  install -m644 -t "$dest" "$regular"
+  if [[ -f $bold ]]; then
+    install -m644 -t "$dest" "$bold"
+  fi
+
+  # Dropping the file in the prefix is not enough on its own. Inside the
+  # flatpak /usr/share/fonts is the GNOME runtime's own set, Latin only, and
+  # the host's fonts hang off /run/host/fonts where Wine never looks, so the
+  # prefix starts with no Korean face at all. Wine also declined to pick these
+  # two up by itself -- the font list stayed at its original 117 across a
+  # cache wipe and a wineboot -u -- so name them outright.
+  local reg='HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Fonts'
+  timeout 120 cli reg add -b "$BOTTLE" -k "$reg" \
+    -v 'NanumGothic (TrueType)' -d "${regular##*/}" -t REG_SZ
+  if [[ -f $bold ]]; then
+    timeout 120 cli reg add -b "$BOTTLE" -k "$reg" \
+      -v 'NanumGothic Bold (TrueType)' -d "${bold##*/}" -t REG_SZ
+  fi
+}
+
+install_kakaotalk() {
+  if [[ -f $EXE ]] && [[ $reinstall == false ]]; then
+    return
+  fi
+  if [[ ! -f $INSTALLER ]]; then
+    step "downloading the KakaoTalk installer"
+    curl -fsSL --create-dirs -o "$INSTALLER" "$INSTALLER_URL"
+  fi
+  # Same sandbox problem as the registry bundle: stage it inside the prefix.
+  local staged="$PREFIX/drive_c/users/$USER/Downloads/KakaoTalk_Setup.exe"
+  install -Dm644 "$INSTALLER" "$staged"
+  step "running the installer (NSIS, silent)"
+  cli run -b "$BOTTLE" -e "$staged" /S
+  rm -f "$staged"
+}
+
+register_program() {
+  if cli programs -b "$BOTTLE" 2>/dev/null | grep -qx -- "- $PROGRAM"; then
+    return
+  fi
+  step "registering $PROGRAM with Bottles"
+  cli add -b "$BOTTLE" -n "$PROGRAM" -p "$EXE"
+}
+
+# Bottles only writes desktop entries from its GUI, through a portal, so write
+# one here. The Exec line is the same one the GUI would generate.
+# Install the shell extension that places the new-message popup, and the
+# rules it reads. Wayland does not let a client position its own windows, so
+# the popup arrives mid-screen however KakaoTalk asks; the compositor puts it
+# right. See gnome/kakaotalk-popup@lens0021/impl.js.
+#
+# A shell that has never seen this extension will not notice it until the
+# next login, and there is no way to make it look sooner on Wayland, so this
+# says so rather than pretending the install took.
+install_shell_extension() {
+  local uuid=kakaotalk-popup@lens0021
+  local dest="$HOME/.local/share/gnome-shell/extensions/$uuid"
+  local rules="${XDG_CONFIG_HOME:-$HOME/.config}/kakaotalk-popup.json"
+
+  step "installing the $uuid shell extension"
+  install -d "$dest"
+  install -m644 -t "$dest" "$REPO/gnome/$uuid"/*
+  if [[ ! -e $rules ]]; then
+    install -Dm644 "$REPO/config/kakaotalk-popup.json" "$rules"
+  fi
+
+  if gnome-extensions info "$uuid" >/dev/null 2>&1; then
+    gnome-extensions enable "$uuid"
+  else
+    echo "  (!) log out and back in, then: gnome-extensions enable $uuid" >&2
+  fi
+}
+
+install_desktop_entry() {
+  local icon_src="${EXE%/*}/skin/default/image/3.0/svgs/common_img_appicon.svg"
+  local icon_dest="$HOME/.local/share/icons/hicolor/scalable/apps/kakaotalk.svg"
+  # kakaotalk-bottle.desktop, not kakaotalk.desktop. GNOME Shell keeps the
+  # action list it read the first time it saw a desktop file id and does not
+  # pick up actions added later, however often the file is rewritten, and a
+  # Wayland session gives no way to restart the shell and make it look again.
+  # A file name it has never seen gets read fresh.
+  local entry="$HOME/.local/share/applications/kakaotalk-bottle.desktop"
+  rm -f "$HOME/.local/share/applications/kakaotalk.desktop"
+
+  # The two actions are not decoration. KakaoTalk offers no way out but its
+  # tray menu, and that menu is what breaks when the display layout changes
+  # under it -- the popup lands far from the pointer and reads as a dead
+  # right-click, leaving no way to restart the thing that needs restarting.
+  # GNOME draws these itself, so they work whatever Wine thinks.
+  step "installing the desktop entry"
+  install -Dm644 "$icon_src" "$icon_dest"
+  # GTK trusts hicolor's icon-theme.cache over the directory when one exists,
+  # so a stale cache hides the icon and the entry falls back to a generic one.
+  # --ignore-theme-index: the per-user hicolor tree carries no index.theme,
+  # and without the flag the cache is left stale with only a warning.
+  gtk-update-icon-cache -f -q --ignore-theme-index "${icon_dest%/scalable/*}"
+  install -d "${entry%/*}"
+  cat >"$entry" <<EOF
+[Desktop Entry]
+Type=Application
+Name=$PROGRAM
+GenericName=KakaoTalk
+Comment=카카오톡 (Bottles/Wine)
+Exec=flatpak run --command=bottles-cli $FLATPAK_ID run -b $BOTTLE -p $PROGRAM
+Icon=kakaotalk
+Terminal=false
+Categories=Network;InstantMessaging;
+StartupWMClass=kakaotalk.exe
+Actions=restart;quit;
+
+[Desktop Action restart]
+Name=다시 시작
+Exec=$REPO/bin/kakaotalk-restart
+
+[Desktop Action quit]
+Name=종료
+Exec=$REPO/bin/kakaotalk-restart --quit
+EOF
+  update-desktop-database "${entry%/*}" 2>/dev/null || true
+}
+
+ensure_runtime_locale
+ensure_bottles
+ensure_bottle
+set_bottle_locale
+apply_registry_rule
+install_font
+substitute_korean_fonts
+rename_chrome_fonts
+link_emoji_font
+use_wayland_driver
+set_dpi
+install_kakaotalk
+register_program
+install_desktop_entry
+install_shell_extension
+
+step "done; launch it from the app grid or with"
+echo "    flatpak run --command=bottles-cli $FLATPAK_ID run -b $BOTTLE -p $PROGRAM"
