@@ -417,6 +417,12 @@ install_shell_extension() {
   local dest="$HOME/.local/share/gnome-shell/extensions/$uuid"
   local rules="${XDG_CONFIG_HOME:-$HOME/.config}/kakaotalk-popup.json"
 
+  # The extension restarts the app when its tray window is closed, and calls
+  # this script by full path to do it. A shell extension cannot be told where
+  # this repo was cloned, so meet it at a fixed place instead.
+  install -d "$HOME/.local/bin"
+  ln -sf "$REPO/bin/kakaotalk-restart" "$HOME/.local/bin/kakaotalk-restart"
+
   step "installing the $uuid shell extension"
   install -d "$dest"
   install -m644 -t "$dest" "$REPO/gnome/$uuid"/*

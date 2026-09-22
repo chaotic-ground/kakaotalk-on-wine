@@ -3,6 +3,7 @@
 #
 #   --start    start it, unless it is already running
 #   --quit     stop it
+#   --recover  restart it, but only if it is still running
 #   (nothing)  stop it, clear Wine's stale monitor record, start it again
 #
 # --start is what the desktop entry runs, and the guard in it is the point.
@@ -63,6 +64,18 @@ case ${1-} in
     ;;
   --quit)
     stop
+    ;;
+  --recover)
+    # Called when the tray window goes away. Closing that window strands the
+    # app: KakaoTalk hides rather than minimises, so with no tray there is
+    # nothing left that can ask it to come back, and no window to ask with.
+    #
+    # The wait is to tell that apart from an ordinary quit, where the tray
+    # window also disappears -- a moment later the process is gone too, and
+    # then there is nothing to recover and resurrecting it would be wrong.
+    sleep 3
+    running || exit 0
+    exec "$0"
     ;;
   "")
     stop

@@ -1,6 +1,18 @@
 {
-  "log": false,
+  "log": true,
+  "tray_indicator": true,
+  "tray_click": {
+    "from_left": 12,
+    "from_bottom": 16
+  },
   "rules": [
-    {"type": [0], "title": "KakaoTalkShadowWnd", "action": "bottom-right"}
-  ]
+    {
+      "type": [
+        0
+      ],
+      "title": "KakaoTalkShadowWnd",
+      "action": "bottom-right"
+    }
+  ],
+  "recover_tray": true
 }

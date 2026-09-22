@@ -43,8 +43,13 @@
 // corner), and "none" (match and leave alone, to keep a broader rule below
 // from taking it).
 
+import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
+import GObject from 'gi://GObject';
+import St from 'gi://St';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 // Loaded by extension.js, which re-imports this file on every enable so it
 // can be edited without logging out. Plain class, not an Extension subclass:
 // the shell only ever sees the loader.
@@ -55,7 +60,71 @@ const MARGIN = 16;
 // so ownership is tracked by the pids these windows come from.
 const OWNER_CLASSES = ['kakaotalk.exe', 'explorer.exe'];
 
-const DEFAULT_CONFIG = {log: true, rules: []};
+const DEFAULT_CONFIG = {
+    log: true,
+    rules: [],
+    tray_indicator: true,
+    // Where in the tray window the icon sits, since the click has to land on
+    // the icon and not merely inside the window. From the left edge, and from
+    // the bottom edge, because the title bar Wine draws makes the top a poor
+    // thing to measure from. Tunable without touching code: getting this
+    // wrong is silent, the click simply does nothing.
+    tray_click: {from_left: 20, from_bottom: 15},
+    // Restart KakaoTalk when its tray window is closed. See _watchTray.
+    recover_tray: true,
+};
+
+// A restart destroys the tray window on its way, which would look exactly
+// like the thing being recovered from. Long enough to cover a restart, short
+// enough that a second accident a minute later is still caught.
+const RECOVER_COOLDOWN_US = 90 * 1000 * 1000;
+
+
+// A panel button that stands in for Wine's floating tray window.
+//
+// Under Wayland there is no system tray protocol, so Wine draws the tray as
+// an ordinary window. It works -- a left click on it brings KakaoTalk's
+// window back -- but it does not appear in alt-tab, so reaching it means a
+// trip through the overview, which is a lot of ceremony for one click.
+//
+// The button cannot simply restore the window itself. KakaoTalk does not
+// minimise, it hides: once it goes to the tray its window stops existing as
+// far as the compositor is concerned, so there is nothing to activate. Only
+// the app can bring it back, and the only thing it listens to is a click on
+// that tray window.
+//
+// So the click is delivered for real, with a virtual pointer: raise the tray
+// window, warp to it, press and release, warp back. The cursor visibly jumps
+// and returns. That is the cost, and it is why this is a setting.
+//
+// GTypeName is made unique per load on purpose. GObject registers a type name
+// globally and keeps it, so re-importing this file -- which is the whole
+// point of the loader -- would otherwise fail with "already registered" and
+// take the extension down with it.
+const TrayIndicator = GObject.registerClass({
+    GTypeName: `KakaoTalkTrayIndicator_${Date.now()}`,
+},
+class TrayIndicator extends PanelMenu.Button {
+    _init(owner) {
+        // The third argument says not to build a menu. With one, the button
+        // treats a click as "open my menu" and the handler below never runs.
+        super._init(0.5, 'KakaoTalk', true);
+        this._owner = owner;
+        this.add_child(new St.Icon({
+            icon_name: 'kakaotalk',
+            style_class: 'system-status-icon',
+        }));
+        this.connect('button-press-event', () => {
+            this._owner.pokeTray();
+            return Clutter.EVENT_STOP;
+        });
+    }
+});
+
+// The tray is the explorer.exe window; the app's own windows are not it.
+function owned_tray_check(wmClass) {
+    return wmClass === 'explorer.exe';
+}
 
 export default class KakaoTalkPopup {
     constructor(extension) {
@@ -69,9 +138,11 @@ export default class KakaoTalkPopup {
             [GLib.get_user_config_dir(), 'kakaotalk-popup.json']);
         this._loadConfig();
         this._watchConfig();
+        this._dumpWindows();
 
         this._createdId = global.display.connect('window-created',
             (_display, window) => this._onWindowCreated(window));
+        this._addIndicator();
         console.log(`${TAG} enabled, config=${this._configPath}`);
     }
 
@@ -83,6 +154,100 @@ export default class KakaoTalkPopup {
         this._monitor?.cancel();
         this._monitor = null;
         this._pids = null;
+        this._indicator?.destroy();
+        this._indicator = null;
+        this._virtual = null;
+    }
+
+    // What exists right now, as opposed to what gets created later. Answers
+    // the question a window-created hook cannot: whether a window is still
+    // there after the app has put itself away.
+    _dumpWindows() {
+        for (const window of global.display.list_all_windows()) {
+            const wmClass = window.get_wm_class();
+            if (wmClass !== 'kakaotalk.exe' && wmClass !== 'explorer.exe')
+                continue;
+            // Learn the pids from what is already open. Without this the
+            // set stays empty until some window happens to be created, and
+            // the tray cannot be found in the meantime.
+            const pid = window.get_pid();
+            if (pid > 0)
+                this._pids.add(pid);
+            if (owned_tray_check(wmClass))
+                this._watchTray(window);
+            if (this._config.log)
+                console.log(`${TAG} present: ${this._describe(window)}`);
+        }
+    }
+
+
+    _addIndicator() {
+        if (!this._config.tray_indicator)
+            return;
+        this._indicator = new TrayIndicator(this);
+        Main.panel.addToStatusArea('kakaotalk-popup', this._indicator);
+    }
+
+    // Wine's tray is a window like any other: same pid as the app, drawn by
+    // its explorer.exe, and the only one of those that is not the main
+    // window.
+    _findTrayWindow() {
+        for (const window of global.display.list_all_windows()) {
+            if (window.get_wm_class() !== 'explorer.exe')
+                continue;
+            if (!this._pids.has(window.get_pid()))
+                continue;
+            return window;
+        }
+        return null;
+    }
+
+    pokeTray() {
+        const tray = this._findTrayWindow();
+        if (!tray) {
+            console.log(`${TAG} no tray window to poke`);
+            return;
+        }
+
+        if (!this._virtual) {
+            const seat = Clutter.get_default_backend().get_default_seat();
+            this._virtual = seat.create_virtual_device(
+                Clutter.InputDeviceType.POINTER_DEVICE);
+        }
+
+        const rect = tray.get_frame_rect();
+        const spot = {...DEFAULT_CONFIG.tray_click, ...(this._config.tray_click ?? {})};
+        const target = [
+            rect.x + spot.from_left,
+            rect.y + rect.height - spot.from_bottom,
+        ];
+
+        // The click goes wherever the pointer is, to whatever is on top, so
+        // the window has to be up front before the pointer arrives.
+        tray.raise();
+        tray.activate(global.get_current_time());
+        if (this._config.log) {
+            console.log(`${TAG} tray at ${rect.x},${rect.y} ${rect.width}x` +
+                `${rect.height}, pointer to ${target[0]},${target[1]}`);
+        }
+
+        this._virtual.notify_absolute_motion(
+            GLib.get_monotonic_time(), target[0], target[1]);
+
+        // No synthetic click follows, because one does not work. Tried:
+        // Clutter's virtual pointer device, which reports a real
+        // MetaVirtualInputDeviceNative and whose button constants are sound,
+        // firing press and release at the icon with the pointer measurably
+        // on it and monotonic timestamps. The pointer moves, no exception is
+        // raised, and Wine does not react. With the app's own window as the
+        // test, a poke on its own never brought it back; the times it seemed
+        // to were a real click landing on the icon the pointer had been
+        // parked on.
+        //
+        // Which is what this does instead: put the pointer on the icon, and
+        // leave the click to a hand. Two clicks rather than one, but the
+        // hunting is gone -- the tray window does not appear in alt-tab, so
+        // reaching it otherwise means a trip through the overview.
     }
 
     _loadConfig() {
@@ -126,6 +291,9 @@ export default class KakaoTalkPopup {
         if (OWNER_CLASSES.includes(wmClass) && pid > 0)
             this._pids.add(pid);
 
+        if (owned_tray_check(wmClass))
+            this._watchTray(window);
+
         const owned = this._pids.has(pid);
         if (this._config.log)
             console.log(`${TAG} ${this._describe(window)} owned=${owned}`);
@@ -138,6 +306,37 @@ export default class KakaoTalkPopup {
             this._apply(rule, window);
             return;
         }
+    }
+
+    // Closing Wine's tray window strands the app. KakaoTalk hides rather than
+    // minimises, so once the tray is gone nothing can ask it to show itself
+    // again -- the indicator has nothing to poke, and the only way back is a
+    // restart. Since the only way to find that out is to be stuck, do it for
+    // them.
+    //
+    // The X that does this is drawn by Wine as an ordinary Win32 caption
+    // button, so it cannot be taken away from out here; only its consequence
+    // can be undone.
+    _watchTray(window) {
+        window.connect('unmanaged', () => {
+            if (!this._config.recover_tray)
+                return;
+            const now = GLib.get_monotonic_time();
+            if (this._lastRecover && now - this._lastRecover < RECOVER_COOLDOWN_US)
+                return;
+            this._lastRecover = now;
+            console.log(`${TAG} tray window closed, recovering`);
+            try {
+                // Full path rather than a name on PATH: the shell's PATH is
+                // whatever the session started with, and ~/.local/bin is not
+                // reliably on it. kakaotalk-bottle puts the symlink there.
+                const helper = GLib.build_filenamev(
+                    [GLib.get_home_dir(), '.local', 'bin', 'kakaotalk-restart']);
+                Gio.Subprocess.new([helper, '--recover'], Gio.SubprocessFlags.NONE);
+            } catch (e) {
+                console.log(`${TAG} could not recover: ${e.message}`);
+            }
+        });
     }
 
     _matches(rule, window) {
