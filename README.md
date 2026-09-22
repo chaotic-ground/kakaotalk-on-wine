@@ -26,6 +26,7 @@ is installed on the host.
 |---|---|
 | Korean UI, Hangul everywhere | works |
 | Tray icon, click to restore the window | works |
+| Panel indicator, and recovery if the tray is closed | works, via the extension |
 | New-message popups, bottom right | works, via a shell extension |
 | Menus, tooltips, dialogs in Korean | works |
 | Emoji | **boxes** |
@@ -52,7 +53,9 @@ nobody repeats the search:
   correct StartupWMClass loses to it.
 
 Quit and restart live on the app icon's right-click menu rather than the tray,
-since the tray's menu does not open. That also matters after a display
+since the tray's menu does not open. Clicking the app icon while it is
+already running does nothing on purpose: passing that through starts a second
+client in the same prefix and single-instance KakaoTalk loses both. That also matters after a display
 change: Wine keeps a stale record of the monitors, which the restart clears.
 
 ## The things that were not obvious
@@ -95,7 +98,9 @@ disable/enable instead of a logout.
 - `config/kakaotalk-korean.reg` — UI language and Latin font substitutions,
   applied as a Bottles registry rule so a runner swap cannot undo it.
 - `config/kakaotalk-popup.json` — rules for the extension below.
-- `gnome/kakaotalk-popup@lens0021/` — places the new-message popup.
+- `gnome/kakaotalk-popup@lens0021/` — places the new-message popup, adds a
+  panel indicator for the tray window, and restarts KakaoTalk if that window
+  is closed, which otherwise strands the app with no way to ask it back.
 
 ## License
 
