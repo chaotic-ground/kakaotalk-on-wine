@@ -442,6 +442,11 @@ install_desktop_entry() {
   local entry="$HOME/.local/share/applications/kakaotalk-bottle.desktop"
   rm -f "$HOME/.local/share/applications/kakaotalk.desktop"
 
+  # Exec goes through the guard rather than launching directly. Clicking
+  # the icon of an app that is already running does not raise its window, it
+  # kills it: a second client starts in the same prefix and KakaoTalk, being
+  # single-instance, ends up with neither.
+  #
   # The two actions are not decoration. KakaoTalk offers no way out but its
   # tray menu, and that menu is what breaks when the display layout changes
   # under it -- the popup lands far from the pointer and reads as a dead
@@ -461,7 +466,7 @@ Type=Application
 Name=$PROGRAM
 GenericName=KakaoTalk
 Comment=카카오톡 (Bottles/Wine)
-Exec=flatpak run --command=bottles-cli $FLATPAK_ID run -b $BOTTLE -p $PROGRAM
+Exec=$REPO/bin/kakaotalk-restart --start
 Icon=kakaotalk
 Terminal=false
 Categories=Network;InstantMessaging;

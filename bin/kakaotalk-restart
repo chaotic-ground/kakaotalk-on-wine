@@ -1,16 +1,25 @@
 #!/bin/bash
-# Stop KakaoTalk, clear Wine's stale monitor record, start it again.
+# Start, quit or restart KakaoTalk.
 #
-# This exists because the tray menu is the only way KakaoTalk offers to quit,
-# and that menu is exactly what breaks when the display layout changes while
-# it runs: Wine caches monitor geometry, a monitor coming or going leaves it
-# stale, and the popup then lands nowhere near the pointer -- sometimes on the
-# far side of the screen, which reads as a dead right-click. With no reachable
-# menu there is nothing to restart it with, and restarting alone would not
-# have been enough anyway, which is why this drops the cached record too.
+#   --start    start it, unless it is already running
+#   --quit     stop it
+#   (nothing)  stop it, clear Wine's stale monitor record, start it again
 #
-# Reached from the desktop entry's right-click actions, which GNOME draws
-# itself and Wine cannot spoil.
+# --start is what the desktop entry runs, and the guard in it is the point.
+# Launching the app a second time while it is running does not raise the
+# window, it kills the app: a second client starts in the same prefix,
+# KakaoTalk is single-instance, and both ends of that argument lose. Clicking
+# the icon of a running app is an ordinary thing to do, so the entry must not
+# pass it through.
+#
+# quit and restart hang off the entry's right-click actions because the tray
+# menu, which is all KakaoTalk itself offers, does not open under Wine's
+# Wayland driver -- right-clicking the floating tray window produces no window
+# at all. Left-clicking it does restore the main window, which is the way back
+# to a minimised app.
+#
+# Restart also drops Wine's record of the monitors, because a display coming
+# or going leaves it stale and restarting alone does not clear it.
 set -euo pipefail
 IFS=$'\n\t'
 
@@ -28,7 +37,12 @@ running() {
   ps -eo stat=,args= | grep -a 'KakaoTalk\.exe' | grep -qav '^Z'
 }
 
-if running; then
+launch() {
+  exec flatpak run --command=bottles-cli "$FLATPAK_ID" run -b "$BOTTLE" -p "$PROGRAM"
+}
+
+stop() {
+  running || return 0
   pkill -f 'KakaoTalk\.exe' || true
   # Wait for the prefix to go quiet. A new instance started while the old
   # wineserver is still winding down tends to exit without a window.
@@ -36,19 +50,33 @@ if running; then
     running || break
     sleep 1
   done
-fi
+}
 
 case ${1-} in
-  --quit) exit 0 ;;
+  --start)
+    if running; then
+      # Already up. Doing nothing is not much, but it is better than the
+      # alternative, which is killing it.
+      exit 0
+    fi
+    launch
+    ;;
+  --quit)
+    stop
+    ;;
+  "")
+    stop
+    # Wine goes looking for a monitor it no longer lists and says so --
+    # "Failed to find monitor with path DISPLAY\Default_Monitor\0000&0001" --
+    # and that stale record is what throws the app's own popups across the
+    # screen. The key has to go; Wine builds it again at the next start, with
+    # no wineboot needed.
+    timeout 120 flatpak run --command=bottles-cli "$FLATPAK_ID" shell -b "$BOTTLE" \
+      -i 'reg delete "HKLM\System\CurrentControlSet\Enum\DISPLAY" /f' >/dev/null 2>&1 || true
+    launch
+    ;;
+  *)
+    echo "usage: ${0##*/} [--start|--quit]" >&2
+    exit 2
+    ;;
 esac
-
-# Drop Wine's record of the monitors on the way past. A display coming or
-# going leaves it stale -- it goes looking for a monitor it no longer lists
-# and says so, "Failed to find monitor with path DISPLAY\Default_Monitor\
-# 0000&0001" -- and stale is what puts the tray popup on the far side of the
-# screen. Restarting alone does not clear it; the key has to go. Wine builds
-# it again at the next start, no wineboot needed.
-timeout 120 flatpak run --command=bottles-cli "$FLATPAK_ID" shell -b "$BOTTLE" \
-  -i 'reg delete "HKLM\System\CurrentControlSet\Enum\DISPLAY" /f' >/dev/null 2>&1 || true
-
-exec flatpak run --command=bottles-cli "$FLATPAK_ID" run -b "$BOTTLE" -p "$PROGRAM"
