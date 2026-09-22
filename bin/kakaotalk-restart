@@ -18,12 +18,22 @@ readonly FLATPAK_ID=com.usebottles.bottles
 readonly BOTTLE=KakaoTalk
 readonly PROGRAM=카카오톡
 
-if pgrep -f 'KakaoTalk\.exe' >/dev/null; then
+# pgrep counts a zombie as running. KakaoTalk leaves them behind whenever its
+# launcher is killed rather than allowed to reap, and a zombie holds nothing
+# but a pid slot -- so treating one as a live process means waiting twenty
+# seconds for something already gone, and reading "still running" off a
+# corpse.
+running() {
+  # shellcheck disable=SC2009  # pgrep is what cannot tell a zombie apart
+  ps -eo stat=,args= | grep -a 'KakaoTalk\.exe' | grep -qav '^Z'
+}
+
+if running; then
   pkill -f 'KakaoTalk\.exe' || true
   # Wait for the prefix to go quiet. A new instance started while the old
   # wineserver is still winding down tends to exit without a window.
   for _ in {1..20}; do
-    pgrep -f 'KakaoTalk\.exe' >/dev/null || break
+    running || break
     sleep 1
   done
 fi
