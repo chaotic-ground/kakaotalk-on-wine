@@ -38,6 +38,16 @@ running() {
   ps -eo stat=,args= | grep -a 'KakaoTalk\.exe' | grep -qav '^Z'
 }
 
+# A launch takes the better part of a minute, and for most of it there is no
+# window and no KakaoTalk.exe to find -- only the launcher, working. Someone
+# watching nothing happen clicks again, and the second client kills the first
+# and itself with it, so the wait is not merely wasted, it undoes the launch
+# that was already on its way.
+starting() {
+  # shellcheck disable=SC2009  # matching on the full command line, not a name
+  ps -eo args= | grep -a "bottles-cli run -b $BOTTLE" | grep -qav grep
+}
+
 launch() {
   exec flatpak run --command=bottles-cli "$FLATPAK_ID" run -b "$BOTTLE" -p "$PROGRAM"
 }
@@ -55,9 +65,9 @@ stop() {
 
 case ${1-} in
   --start)
-    if running; then
-      # Already up. Doing nothing is not much, but it is better than the
-      # alternative, which is killing it.
+    if running || starting; then
+      # Up, or on its way. Doing nothing is not much, but it is better than
+      # the alternative, which is killing it.
       exit 0
     fi
     launch

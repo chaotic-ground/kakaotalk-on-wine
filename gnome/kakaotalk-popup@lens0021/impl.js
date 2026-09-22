@@ -205,7 +205,12 @@ export default class KakaoTalkPopup {
     pokeTray() {
         const tray = this._findTrayWindow();
         if (!tray) {
-            console.log(`${TAG} no tray window to poke`);
+            // No tray means the app is not running -- it is the one window
+            // KakaoTalk keeps up the whole time. An indicator that sits there
+            // doing nothing is worse than one that starts what it stands for,
+            // and --start is a no-op if something is running after all.
+            console.log(`${TAG} no tray window, starting KakaoTalk`);
+            this._runHelper('--start');
             return;
         }
 
@@ -326,17 +331,21 @@ export default class KakaoTalkPopup {
                 return;
             this._lastRecover = now;
             console.log(`${TAG} tray window closed, recovering`);
-            try {
-                // Full path rather than a name on PATH: the shell's PATH is
-                // whatever the session started with, and ~/.local/bin is not
-                // reliably on it. kakaotalk-bottle puts the symlink there.
-                const helper = GLib.build_filenamev(
-                    [GLib.get_home_dir(), '.local', 'bin', 'kakaotalk-restart']);
-                Gio.Subprocess.new([helper, '--recover'], Gio.SubprocessFlags.NONE);
-            } catch (e) {
-                console.log(`${TAG} could not recover: ${e.message}`);
-            }
+            this._runHelper('--recover');
         });
+    }
+
+    // Full path rather than a name on PATH: the shell's PATH is whatever the
+    // session started with, and ~/.local/bin is not reliably on it.
+    // kakaotalk-bottle puts the symlink there.
+    _runHelper(mode) {
+        const helper = GLib.build_filenamev(
+            [GLib.get_home_dir(), '.local', 'bin', 'kakaotalk-restart']);
+        try {
+            Gio.Subprocess.new([helper, mode], Gio.SubprocessFlags.NONE);
+        } catch (e) {
+            console.log(`${TAG} ${helper} ${mode} failed: ${e.message}`);
+        }
     }
 
     _matches(rule, window) {
