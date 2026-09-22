@@ -26,7 +26,8 @@ is installed on the host.
 |---|---|
 | Korean UI, Hangul everywhere | works |
 | Tray icon, click to restore the window | works |
-| Panel indicator, and recovery if the tray is closed | works, via the extension |
+| Panel indicator: raise, restore or start | works, via the extension |
+| Recovery if the tray window is closed | works, via the extension |
 | New-message popups, bottom right | works, via a shell extension |
 | Menus, tooltips, dialogs in Korean | works |
 | Emoji | **boxes** |
@@ -98,9 +99,11 @@ disable/enable instead of a logout.
 - `config/kakaotalk-korean.reg` — UI language and Latin font substitutions,
   applied as a Bottles registry rule so a runner swap cannot undo it.
 - `config/kakaotalk-popup.json` — rules for the extension below.
-- `gnome/kakaotalk-popup@lens0021/` — places the new-message popup, adds a
-  panel indicator for the tray window, and restarts KakaoTalk if that window
-  is closed, which otherwise strands the app with no way to ask it back.
+- `gnome/kakaotalk-popup@lens0021/` — places the new-message popup, and adds
+  a panel indicator that raises KakaoTalk's window, or reaches it through the
+  tray when it is hidden, or starts the app when it is not running. Also
+  restarts KakaoTalk if the tray window is closed, which otherwise strands it
+  with no way to ask it back.
 
 ## License
 

@@ -202,7 +202,37 @@ export default class KakaoTalkPopup {
         return null;
     }
 
+    // The app's own window, if it is up. Not the popup, which is also
+    // kakaotalk.exe and comes and goes on its own; and the main window is
+    // preferred over a chat room, which is what is wanted when several are
+    // open.
+    _findMainWindow() {
+        let fallback = null;
+        for (const window of global.display.list_all_windows()) {
+            if (window.get_wm_class() !== 'kakaotalk.exe')
+                continue;
+            if (!this._pids.has(window.get_pid()))
+                continue;
+            const title = window.get_title();
+            if (title === 'KakaoTalkShadowWnd' || title === '')
+                continue;
+            if (title === '카카오톡')
+                return window;
+            fallback ??= window;
+        }
+        return fallback;
+    }
+
     pokeTray() {
+        // Going through the tray is a detour for a window that is not there.
+        // When it is, raise it and be done -- no pointer warping, no second
+        // click.
+        const main = this._findMainWindow();
+        if (main) {
+            main.activate(global.get_current_time());
+            return;
+        }
+
         const tray = this._findTrayWindow();
         if (!tray) {
             // No tray means the app is not running -- it is the one window
