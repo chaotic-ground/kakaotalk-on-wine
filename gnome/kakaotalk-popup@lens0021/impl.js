@@ -25,9 +25,13 @@
 //   {
 //     "log": false,
 //     "rules": [
-//       {"type": [0], "title": "KakaoTalkShadowWnd", "action": "bottom-right"}
+//       {"type": [0, 12], "title": "KakaoTalkShadowWnd", "action": "bottom-right"}
 //     ]
 //   }
+//
+// 12 is NOTIFICATION, and it is in that list because this re-types the
+// popup's windows to it -- see _markNotification. A rule naming only NORMAL
+// stops matching the moment that happens, and takes the placement with it.
 //
 // Turn "log" on to find out what a window looks like before writing a rule
 // for it. That is how KakaoTalkShadowWnd was named: a message arrived while
@@ -92,6 +96,9 @@ const DEFAULT_CONFIG = {
     // Follow the pointer warp with a synthetic click. Wine does not act on
     // it today; it is here for the day it does. See pokeTray.
     tray_virtual_click: true,
+    // Re-type a notification's windows as NOTIFICATION so mutter never gives
+    // them the focus to begin with. See _markNotification.
+    popup_notification_type: true,
 };
 
 // How long the virtual click holds the button down.
@@ -264,20 +271,28 @@ export default class KakaoTalkPopup {
 
     // A new message arrives and its popup takes the keyboard with it, which
     // in the middle of typing somewhere else is worse than missing the
-    // message. The popup is not something anyone types into, so hand the
-    // focus straight back to whatever had it.
+    // message -- and worse than it first looked, because the popup carries a
+    // reply box. Keystrokes that land there while the focus is away are not
+    // lost, they are typed into a chat room. Handing the focus back closes
+    // the gap but does not remove it, so this is a mitigation and not a fix;
+    // the fix is not taking the focus at all.
     //
     // Restoring focus raises this again with the old window as the subject,
     // which is not a popup, so it records and stops there rather than
     // bouncing.
     _watchFocus() {
         this._focusId = global.display.connect('notify::focus-window', () => {
-            if (!this._config.keep_focus)
-                return;
             const focused = global.display.focus_window;
             if (!focused)
                 return;
-            if (focused.get_title() !== POPUP_TITLE) {
+            // Logged whoever it is, because which window takes the focus is
+            // the question and the answer was assumed rather than looked at.
+            // The rule below only ever recognised the shadow.
+            if (this._config.log && this._pids?.has(focused.get_pid()))
+                console.log(`${TAG} focus -> ${this._describe(focused)}`);
+            if (!this._config.keep_focus)
+                return;
+            if (!this._isPopupWindow(focused)) {
                 this._lastFocused = focused;
                 return;
             }
@@ -286,6 +301,27 @@ export default class KakaoTalkPopup {
                 return;
             previous.activate(global.get_current_time());
         });
+    }
+
+    // Matching on POPUP_TITLE alone was not enough and the cost of that was
+    // real. A notification takes the focus with two windows, not one: the
+    // shadow, which carries the name, and an untitled one beside it which is
+    // what the message and its reply box are drawn in. Both were logged
+    // taking the focus, alternating, once per frame of the slide -- and only
+    // the shadow was ever handed back, so the one that ends up holding the
+    // focus is the one nobody was watching. That is the window keystrokes go
+    // into, and they go into a chat room from there.
+    //
+    // So: owned, not the main window, and small. Height is the same
+    // discriminator _findMainWindow uses, for the same reason -- every piece
+    // of a notification measured here is 135 tall or less and the main window
+    // 431 or more.
+    _isPopupWindow(window) {
+        if (window.get_wm_class() !== 'kakaotalk.exe')
+            return false;
+        if (!this._pids?.has(window.get_pid()))
+            return false;
+        return window.get_frame_rect().height < MAIN_MIN_HEIGHT;
     }
 
     _addIndicator() {
@@ -502,7 +538,34 @@ export default class KakaoTalkPopup {
                 window.set_type(Meta.WindowType.UTILITY);
             return true;
         }
+
+        // The shadow, by name, before it can be shown. This is the one piece
+        // of a notification that announces itself early enough to be caught
+        // here, and it is also the one recreated once per frame of the
+        // slide, so this is most of the focus stealing prevented.
+        if (window.get_title() === POPUP_TITLE) {
+            this._markNotification(window);
+            return true;
+        }
         return false;
+    }
+
+    // Mutter gives focus on map to NORMAL, DIALOG and MODAL_DIALOG and to
+    // nothing else, so this settles the question rather than answering it
+    // afterwards. _watchFocus stays as the net underneath: the untitled
+    // window holding the message and its reply box cannot be recognised
+    // before it is mapped -- no title, no size yet -- so its first grab still
+    // gets through and still has to be handed back.
+    //
+    // This is why the rules carry NOTIFICATION in their "type" list. A rule
+    // matching only NORMAL stops matching the moment this runs, and the
+    // placement goes with it.
+    _markNotification(window) {
+        if (!this._config.popup_notification_type)
+            return;
+        if (window.get_window_type() === Meta.WindowType.NOTIFICATION)
+            return;
+        window.set_type(Meta.WindowType.NOTIFICATION);
     }
 
     _onWindowCreated(window) {
@@ -587,7 +650,7 @@ export default class KakaoTalkPopup {
     _group() {
         const now = GLib.get_monotonic_time();
         if (!this._burst || now > this._burst.until)
-            this._burst = {anchor: null, offset: null, waiting: []};
+            this._burst = {anchor: null, offset: null, waiting: [], members: []};
         this._burst.until = now + GROUP_GAP_US;
         return this._burst;
     }
@@ -625,7 +688,24 @@ export default class KakaoTalkPopup {
                 console.log(`${TAG} not part of the popup: ${this._describe(window)}`);
             return;
         }
+        this._markNotification(window);
         window.move_frame(false, rect.x + group.offset.dx, rect.y + group.offset.dy);
+        if (!group.members.includes(window))
+            group.members.push(window);
+    }
+
+    // The shadow is a backdrop and the message is drawn in a window beside
+    // it, so the message has to end up on top. It used to get there by
+    // taking the focus, which raised it; re-typing the popup to NOTIFICATION
+    // took that away and left the shadow -- recreated and re-raised once per
+    // frame of the slide -- sitting over the message. Hence raising the rest
+    // of the group after the shadow, every time the shadow comes back.
+    _raiseGroupMembers(group) {
+        group.members = group.members.filter(w => w.get_compositor_private());
+        for (const member of group.members) {
+            member.make_above();
+            member.raise();
+        }
     }
 
     // Closing Wine's tray window strands the app. KakaoTalk hides rather than
@@ -712,8 +792,18 @@ export default class KakaoTalkPopup {
         // here can stop KakaoTalk drawing the popup -- that is the app's
         // decision and it is not asking -- but declining to raise it leaves
         // the fullscreen window on top, which is the same thing to look at.
-        if (rule.above && !this._overFullscreen(window))
+        if (rule.above && !this._overFullscreen(window)) {
+            // raise as well as make_above. make_above puts the window in
+            // mutter's always-on-top layer but does not move it within that
+            // layer, and a window that never takes the focus is never raised
+            // by the focus either -- which is exactly what re-typing it to
+            // NOTIFICATION arranges. Together they were the two halves of
+            // "the popup stopped coming to the front".
             window.make_above();
+            window.raise();
+            if (this._config.log)
+                console.log(`${TAG} above=${window.is_above()} type=${window.get_window_type()}`);
+        }
 
         const work = window.get_work_area_current_monitor();
         const rect = window.get_frame_rect();
@@ -752,6 +842,7 @@ export default class KakaoTalkPopup {
 
         window.move_frame(false, x, y);
         console.log(`${TAG} ${rule.action} -> ${x},${y}`);
+        this._raiseGroupMembers(group);
     }
 
     _overFullscreen(window) {

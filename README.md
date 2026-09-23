@@ -34,6 +34,7 @@ download page; the one every search result hands you is the 32-bit one at
 | Panel indicator: raise, restore or start | works, via the extension |
 | Restart and quit, on the indicator's right click | works, via the extension |
 | Popup on top, and out of the window list | works, via the extension |
+| Popup never taking the focus | works, via the extension |
 | Recovery if the tray window is closed | works, via the extension |
 | New-message popups, bottom right | works, via a shell extension |
 | Menus, tooltips, dialogs in Korean | works |

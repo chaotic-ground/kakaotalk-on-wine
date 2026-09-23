@@ -11,7 +11,8 @@
   "rules": [
     {
       "type": [
-        0
+        0,
+        12
       ],
       "title": "KakaoTalkShadowWnd",
       "action": "bottom-right",
