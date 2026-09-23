@@ -113,6 +113,10 @@ const GROUP_REACH = 160;
 // fresh window per frame, so this name turns up a lot.
 const POPUP_TITLE = 'KakaoTalkShadowWnd';
 
+// Below this, a window claiming to be 카카오톡 is a leftover rather than the
+// thing itself. See _findMainWindow.
+const MAIN_MIN_HEIGHT = 240;
+
 // A restart destroys the tray window on its way, which would look exactly
 // like the thing being recovered from. Long enough to cover a restart, short
 // enough that a second accident a minute later is still caught.
@@ -309,6 +313,16 @@ export default class KakaoTalkPopup {
     // kakaotalk.exe and comes and goes on its own; and the main window is
     // preferred over a chat room, which is what is wanted when several are
     // open.
+    // The title is not enough on its own. A notification leaves a 107x29
+    // window behind titled 카카오톡, exactly like the real one, and it sits
+    // there taking no input -- so matching on the title alone found that and
+    // the indicator spent its click activating a ghost, silently, in the one
+    // situation where getting the main window back is the whole point.
+    //
+    // Height separates them and nothing else does: every piece of a
+    // notification measured here is 135 tall or less, every main window 431
+    // or more, while the widths overlap (315 against 293). MAIN_MIN_HEIGHT
+    // sits between with room on both sides.
     _findMainWindow() {
         let fallback = null;
         for (const window of global.display.list_all_windows()) {
@@ -318,6 +332,8 @@ export default class KakaoTalkPopup {
                 continue;
             const title = window.get_title();
             if (title === POPUP_TITLE || title === '')
+                continue;
+            if (window.get_frame_rect().height < MAIN_MIN_HEIGHT)
                 continue;
             if (title === '카카오톡')
                 return window;
@@ -332,6 +348,11 @@ export default class KakaoTalkPopup {
         // click.
         const main = this._findMainWindow();
         if (main) {
+            // Logged, because this branch used to be the silent one and that
+            // is how it hid: the indicator did nothing visible and there was
+            // no line to say what it had decided.
+            if (this._config.log)
+                console.log(`${TAG} raising ${this._describe(main)}`);
             main.activate(global.get_current_time());
             return;
         }
