@@ -33,9 +33,17 @@ readonly PROGRAM=카카오톡
 # but a pid slot -- so treating one as a live process means waiting twenty
 # seconds for something already gone, and reading "still running" off a
 # corpse.
+#
+# The brackets are not decoration. ps and grep in a pipeline start together,
+# so ps can list the grep itself, and a plain 'KakaoTalk\.exe' has that
+# process's own argv to match against -- it reports the app running whenever
+# it loses that race. Which is worse than a wrong answer here: --start reads
+# it and quietly does nothing, so the app never launches and nothing says
+# why. '[K]akaoTalk\.exe' is the same pattern and does not appear in the argv
+# of the command carrying it.
 running() {
   # shellcheck disable=SC2009  # pgrep is what cannot tell a zombie apart
-  ps -eo stat=,args= | grep -a 'KakaoTalk\.exe' | grep -qav '^Z'
+  ps -eo stat=,args= | grep -a '[K]akaoTalk\.exe' | grep -qav '^Z'
 }
 
 # A launch takes the better part of a minute, and for most of it there is no
@@ -50,11 +58,18 @@ running() {
 readonly LAUNCH_SECONDS=60
 
 # $1 is a comparison against the launcher's age in seconds, as awk sees it.
+#
+# The pattern arrives in two halves and is joined in BEGIN for the same reason
+# running() spells its name with brackets: ps lists the awk too, and an awk
+# invoked with the whole string on its command line matches itself. It would
+# then always be a launcher under a minute old, starting() would always be
+# true, and --start would never start anything again.
 launcher_pids() {
   # shellcheck disable=SC2009  # matching on the full command line, not a name
   ps -eo pid=,etimes=,args= |
-    awk -v pattern="bottles-cli run -b $BOTTLE" -v limit="$LAUNCH_SECONDS" \
-      -v want="$1" 'index($0, pattern) &&
+    awk -v head='bottles-cli run' -v tail=" -b $BOTTLE" -v limit="$LAUNCH_SECONDS" \
+      -v want="$1" 'BEGIN { pattern = head tail }
+        index($0, pattern) &&
         ((want == "young" && $2 < limit) || (want == "old" && $2 >= limit)) { print $1 }'
 }
 

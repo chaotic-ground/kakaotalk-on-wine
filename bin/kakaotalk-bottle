@@ -63,7 +63,13 @@ readonly FLATPAK_ID=com.usebottles.bottles
 readonly BOTTLE=KakaoTalk
 readonly PROGRAM=카카오톡
 readonly LOCALE=ko_KR
-readonly INSTALLER_URL=https://app-pc.kakaocdn.net/talk/win32/KakaoTalk_Setup.exe
+# The 64-bit client. Kakao publishes three Windows builds and links all of
+# them from the download page: app-pc.kakaocdn.net/talk/win32/ (32-bit, the
+# old path and the one every search result still hands you), this one, which
+# the page labels 기존버전, and talkpc/talk/qwin64/, a beta rewrite. The
+# payload here is PE32+ x86-64, so nothing in the prefix needs to be 32-bit:
+# no i386-unix, no i386-windows, no WoW64 at all.
+readonly INSTALLER_URL=https://lk.kakaocdn.net/talkpc/talk/win32/x64/KakaoTalk_Setup.exe
 
 # Wine does no scaling of its own: it renders at whatever DPI the prefix says,
 # and GNOME's xwayland-native-scaling hands XWayland the panel's real pixels,
@@ -95,12 +101,14 @@ REPO="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
 readonly REPO
 readonly REG_BUNDLE="$REPO/config/kakaotalk-korean.reg"
 readonly CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/kakaotalk-on-wine"
-readonly INSTALLER="$CACHE/KakaoTalk_Setup.exe"
+readonly INSTALLER="$CACHE/KakaoTalk_Setup_x64.exe"
 
 readonly BOTTLES_DATA="$HOME/.var/app/$FLATPAK_ID/data/bottles"
 readonly PREFIX="$BOTTLES_DATA/bottles/$BOTTLE"
 readonly BOTTLE_CONFIG="$PREFIX/bottle.yml"
-readonly EXE="$PREFIX/drive_c/Program Files (x86)/Kakao/KakaoTalk/KakaoTalk.exe"
+# Program Files, not Program Files (x86): that is how you tell which build a
+# prefix has.
+readonly EXE="$PREFIX/drive_c/Program Files/Kakao/KakaoTalk/KakaoTalk.exe"
 
 reinstall=false
 for arg in "$@"; do
@@ -110,8 +118,18 @@ for arg in "$@"; do
   esac
 done
 
+# Every call is capped, because one of these wedging holds the prefix's
+# wineserver and then nothing can start at all. The cap is generous by
+# default -- creating a bottle fetches gecko and mono and takes minutes --
+# and a caller that knows better sets CLI_TIMEOUT for its own call.
+#
+# The timeout lives here rather than at the call sites. Writing timeout
+# before cli looks right and is not: timeout execs a program and cli is a
+# shell function, so it exits 127 and, with set -e, takes the whole run with
+# it. That is exactly what a first install did, quietly, right after the
+# fonts -- and only a rebuilt prefix showed it.
 cli() {
-  flatpak run --command=bottles-cli "$FLATPAK_ID" "$@"
+  timeout "${CLI_TIMEOUT:-600}" flatpak run --command=bottles-cli "$FLATPAK_ID" "$@"
 }
 
 step() {
@@ -142,26 +160,77 @@ ensure_bottles() {
   fi
 }
 
+# Which Wine. Unset means the one Bottles ships -- sys-wine, currently 11.0 --
+# and that is the default because it is the only one on this machine that is
+# allowed to stay on disk. See ensure_runner.
+#
+# Set KAKAOTALK_WINE to a kron4ek release (11.17, say) to pin plain upstream
+# Wine instead, which is what you want if you are going to report a bug: a
+# version number then means a version anyone can check against. The other
+# option Bottles offers, soda, is Proton-derived; it was tried and fixes
+# nothing that matters here, dresses every window in the old Windows theme,
+# and reports WM_CLASS as steam_proton, which breaks StartupWMClass below.
+#
+# The wow64 variant of the kron4ek build rather than the plain amd64 one,
+# because the client is 64-bit and the 32-bit half is dead weight. Neither
+# has actually been seen to run here -- ensure_runner says why -- so the one
+# reason to reach for this knob is the reason it exists: sys-wine 11.0 draws
+# KakaoTalk's window in fragments after a while, only the parts last
+# repainted on an otherwise empty rectangle, and whether a newer Wine fixes
+# that is still an open question.
+readonly WINE_VERSION=${KAKAOTALK_WINE:-}
+readonly RUNNER=${WINE_VERSION:+kron4ek-wine-$WINE_VERSION-wow64}
+readonly RUNNER_URL="https://github.com/Kron4ek/Wine-Builds/releases/download/$WINE_VERSION/wine-$WINE_VERSION-amd64-wow64.tar.xz"
+
+ensure_runner() {
+  [[ -n $RUNNER ]] || return 0
+  local dir="$BOTTLES_DATA/runners/$RUNNER"
+  [[ -d $dir ]] && return 0
+
+  step "downloading Wine $WINE_VERSION"
+  local archive="$CACHE/wine-$WINE_VERSION-amd64-wow64.tar.xz"
+  if [[ ! -f $archive ]]; then
+    curl -fsSL --create-dirs -o "$archive" "$RUNNER_URL"
+  fi
+  install -d "$BOTTLES_DATA/runners"
+  tar -xf "$archive" -C "$BOTTLES_DATA/runners"
+  # The tarball unpacks under its own name; Bottles goes by directory name.
+  mv "$BOTTLES_DATA/runners/wine-$WINE_VERSION-amd64-wow64" "$dir"
+
+  # gdi32.dll as a canary, because on a machine with endpoint antimalware the
+  # extraction is not the last word on what is in that directory. Bitdefender
+  # here quarantines 92 of Wine's PE modules on sight -- gdi32.dll,
+  # svchost.exe, ping.exe and friends, as Gen:Variant.Babar and other generic
+  # heuristics -- seconds after they are written, and leaves the rest.
+  #
+  # What that looks like without this check is worth writing down, because it
+  # cost days: wineboot aborts with "unimplemented function
+  # user32.dll.CreateDialogParamW", which is a lie. WINEDEBUG=+loaddll shows
+  # the truth one line above it, "Library gdi32.dll ... not found", and user32
+  # merely delay-loads its way into a stub. Every kron4ek build failed
+  # identically and it read as a Wine bug for as long as nobody counted the
+  # files. sys-wine survives because it lives in the flatpak runtime's
+  # read-only /usr, where nothing can reach it.
+  if [[ ! -f $dir/lib/wine/x86_64-windows/gdi32.dll ]]; then
+    echo "gdi32.dll is missing from $dir right after extracting it." >&2
+    echo "Something is deleting files there -- on this machine, endpoint" >&2
+    echo "antimalware quarantining Wine's PE modules. Exclude" >&2
+    echo "$BOTTLES_DATA/runners, or leave KAKAOTALK_WINE unset." >&2
+    return 1
+  fi
+}
+
 ensure_bottle() {
   if cli list bottles 2>/dev/null | grep -qx -- "- $BOTTLE"; then
     return
   fi
-  # sys-wine is the Wine the flatpak already carries, so this needs no extra
-  # download; take whatever version of it is on offer, and only fall back to
-  # another runner if there is none.
-  #
-  # Not just the first runner listed. Bottles will happily hand over soda, and
-  # soda was tried here: it fixes nothing that matters -- emoji still come out
-  # as boxes -- while dressing every window in the old Windows theme and
-  # reporting WM_CLASS as steam_proton, which breaks the StartupWMClass in the
-  # desktop entry. It also logged the account out on the way in.
-  local runner
-  runner=$(cli list components -f runner 2>/dev/null | sed -n 's/^- //p' | grep '^sys-wine' | head -1)
-  if [[ -z $runner ]]; then
-    runner=$(cli list components -f runner 2>/dev/null | sed -n 's/^- //p' | head -1)
-  fi
-  step "creating the $BOTTLE bottle on $runner"
-  cli new --bottle-name "$BOTTLE" --environment application --arch win64 --runner "$runner"
+  step "creating the $BOTTLE bottle${RUNNER:+ on $RUNNER}"
+  # An array, not ${RUNNER:+--runner $RUNNER}: IFS is newline and tab here, so
+  # an unquoted expansion would arrive as one argument with a space in it.
+  local runner_opt=()
+  [[ -n $RUNNER ]] && runner_opt=(--runner "$RUNNER")
+  cli new --bottle-name "$BOTTLE" --environment application --arch win64 \
+    "${runner_opt[@]}"
 }
 
 # Bottles turns this into LC_ALL for the runner. bottles-cli has no flag for
@@ -220,7 +289,7 @@ substitute_korean_fonts() {
       printf '\n'
     done
   } | iconv -f UTF-8 -t UTF-16LE | { printf '\xff\xfe'; cat; } >"$staged"
-  timeout 180 cli shell -b "$BOTTLE" -i "reg import $staged"
+  CLI_TIMEOUT=180 cli shell -b "$BOTTLE" -i "reg import $staged"
   rm -f "$staged"
 }
 
@@ -270,7 +339,7 @@ for name in ("CaptionFont", "SmCaptionFont", "MenuFont",
 out.append("")
 open(dest, "w").write("\n".join(out))
 PY
-  timeout 180 cli shell -b "$BOTTLE" -i "reg import $staged"
+  CLI_TIMEOUT=180 cli shell -b "$BOTTLE" -i "reg import $staged"
   rm -f "$staged"
 }
 
@@ -309,7 +378,7 @@ for base in ("맑은 고딕", "Malgun Gothic", "Meiryo UI", "Arial", "Tahoma", "
 lines.append("")
 open(sys.argv[1], "w", encoding="utf-16-le").write("﻿" + "\n".join(lines))
 PY
-  timeout 180 cli shell -b "$BOTTLE" -i "reg import $staged"
+  CLI_TIMEOUT=180 cli shell -b "$BOTTLE" -i "reg import $staged"
   rm -f "$staged"
 }
 
@@ -335,7 +404,7 @@ PY
 use_wayland_driver() {
   local driver=${WINE_GRAPHICS:-wayland}
   step "pointing Wine at the $driver driver"
-  timeout 120 cli reg add -b "$BOTTLE" -k 'HKEY_CURRENT_USER\Software\Wine\Drivers' \
+  CLI_TIMEOUT=120 cli reg add -b "$BOTTLE" -k 'HKEY_CURRENT_USER\Software\Wine\Drivers' \
     -v Graphics -d "$driver" -t REG_SZ
 }
 
@@ -370,10 +439,10 @@ install_font() {
   # two up by itself -- the font list stayed at its original 117 across a
   # cache wipe and a wineboot -u -- so name them outright.
   local reg='HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Fonts'
-  timeout 120 cli reg add -b "$BOTTLE" -k "$reg" \
+  CLI_TIMEOUT=120 cli reg add -b "$BOTTLE" -k "$reg" \
     -v 'NanumGothic (TrueType)' -d "${regular##*/}" -t REG_SZ
   if [[ -f $bold ]]; then
-    timeout 120 cli reg add -b "$BOTTLE" -k "$reg" \
+    CLI_TIMEOUT=120 cli reg add -b "$BOTTLE" -k "$reg" \
       -v 'NanumGothic Bold (TrueType)' -d "${bold##*/}" -t REG_SZ
   fi
 }
@@ -394,9 +463,46 @@ install_kakaotalk() {
   rm -f "$staged"
 }
 
+# What Bottles stores is an absolute path, so "is it registered" is the wrong
+# question -- the name can be there while the path underneath it points at an
+# executable that no longer exists. That is what a build change does: the
+# 32-bit client installed to Program Files (x86), this one to Program Files,
+# and `programs` went on listing 카카오톡 either way while the launcher ran
+# nothing at all.
+#
+# Python rather than grep because bottle.yml is YAML and yaml.dump folds long
+# values across lines, so the path is not on one line to be matched. Bottles
+# writes this file itself, with the same dumper, so reading and writing it
+# back is what it does between runs anyway.
+registered_path() {
+  python3 - "$BOTTLE_CONFIG" "$PROGRAM" <<'EOF'
+import sys, yaml
+config, name = yaml.safe_load(open(sys.argv[1])), sys.argv[2]
+for program in (config.get("External_Programs") or {}).values():
+    if program.get("name") == name:
+        print(program.get("path", ""))
+EOF
+}
+
+drop_registration() {
+  python3 - "$BOTTLE_CONFIG" "$PROGRAM" <<'EOF'
+import sys, yaml
+path, name = sys.argv[1], sys.argv[2]
+config = yaml.safe_load(open(path))
+programs = config.get("External_Programs") or {}
+config["External_Programs"] = {k: v for k, v in programs.items()
+                               if v.get("name") != name}
+yaml.safe_dump(config, open(path, "w"), default_flow_style=False)
+EOF
+}
+
 register_program() {
-  if cli programs -b "$BOTTLE" 2>/dev/null | grep -qx -- "- $PROGRAM"; then
-    return
+  local current
+  current=$(registered_path)
+  [[ $current == "$EXE" ]] && return 0
+  if [[ -n $current ]]; then
+    step "dropping the stale $PROGRAM entry ($current)"
+    drop_registration
   fi
   step "registering $PROGRAM with Bottles"
   cli add -b "$BOTTLE" -n "$PROGRAM" -p "$EXE"
@@ -492,6 +598,7 @@ EOF
 
 ensure_runtime_locale
 ensure_bottles
+ensure_runner
 ensure_bottle
 set_bottle_locale
 apply_registry_rule
