@@ -394,11 +394,15 @@ PY
 # cursor is before opening a menu gets that frozen answer, which is why the
 # tray popup landed at the far edge of the screen.
 #
-# This is a trade, not a win, and both sides of it have since been measured
-# by flipping this one key on an otherwise untouched prefix.
+# Leaving X11 is the point, not a means to it. On a Wayland session the
+# XWayland path is the compatibility one, and an app that can speak the
+# session's own protocol should. The rest of this comment is what that costs
+# and what it happens to buy, both measured since by flipping this one key on
+# an otherwise untouched prefix -- but the ledger is not what decides it.
 #
 # What it buys: new-message popups appear at all. Under X11 not one arrives,
-# still true of the 64-bit client.
+# still true of the 64-bit client. Which is to say the direction and the
+# behaviour agree here, and there is no sacrifice to weigh.
 #
 # What it costs: no Wayland system tray protocol exists, so Wine draws the
 # tray as a floating window whose right-click does nothing, where X11 gives a
