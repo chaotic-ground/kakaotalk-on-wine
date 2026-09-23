@@ -32,6 +32,7 @@ download page; the one every search result hands you is the 32-bit one at
 | Korean UI, Hangul everywhere | works |
 | Tray icon, click to restore the window | works |
 | Panel indicator: raise, restore or start | works, via the extension |
+| Restart and quit, on the indicator's right click | works, via the extension |
 | Popup on top, and out of the window list | works, via the extension |
 | Recovery if the tray window is closed | works, via the extension |
 | New-message popups, bottom right | works, via a shell extension |
@@ -62,8 +63,10 @@ nobody repeats the search:
   `app-flatpak-com.usebottles.bottles-*.scope`, and the desktop entry's
   correct StartupWMClass loses to it.
 
-Quit and restart live on the app icon's right-click menu rather than the tray,
-since the tray's menu does not open. Clicking the app icon while it is
+Quit and restart live on the panel indicator's right-click menu and on the
+app icon's, rather than the tray, since the tray's menu does not open. The
+indicator is the one to reach for -- it is already in the panel, beside the
+thing it acts on. Clicking the app icon while it is
 already running does nothing on purpose: passing that through starts a second
 client in the same prefix and single-instance KakaoTalk loses both. That also matters after a display
 change: Wine keeps a stale record of the monitors, which the restart clears.
@@ -136,11 +139,15 @@ disable/enable instead of a logout.
 - `config/kakaotalk-korean.reg` — UI language and Latin font substitutions,
   applied as a Bottles registry rule so a runner swap cannot undo it.
 - `config/kakaotalk-popup.json` — rules for the extension below.
-- `gnome/kakaotalk-popup@lens0021/` — places the new-message popup, and adds
-  a panel indicator that raises KakaoTalk's window, or reaches it through the
-  tray when it is hidden, or starts the app when it is not running. Also
-  restarts KakaoTalk if the tray window is closed, which otherwise strands it
-  with no way to ask it back.
+- `gnome/kakaotalk-popup@lens0021/` — places the new-message popup, all of
+  it: a notification is several windows and only one has a name to write a
+  rule for, so the rest move by the same offset rather than being left in
+  the middle of the screen. Does not raise it over a fullscreen window, the
+  way GNOME holds its own banners back. Adds a panel indicator that raises
+  KakaoTalk's window on a left click, or reaches it through the tray when it
+  is hidden, or starts the app when it is not running, and offers restart and
+  quit on a right click. Also restarts KakaoTalk if the tray window is
+  closed, which otherwise strands it with no way to ask it back.
 
 ## License
 

@@ -41,7 +41,13 @@
 // "max_width"/"max_height" as bounds on the frame. Actions are "pointer"
 // (top left corner to the cursor), "bottom-right" (against the work area's
 // corner), and "none" (match and leave alone, to keep a broader rule below
-// from taking it). "above": true also keeps the window on top.
+// from taking it). "above": true also keeps the window on top, except over a
+// fullscreen window -- see "respect_fullscreen" and _overFullscreen.
+//
+// A rule places one window, but a notification is several of them and only
+// one carries a name worth matching. The rest move by the same offset, so
+// they stay in the arrangement the app drew them in rather than being left
+// behind in the middle of the screen. See _joinGroup.
 
 import Clutter from 'gi://Clutter';
 import Meta from 'gi://Meta';
@@ -80,7 +86,22 @@ const DEFAULT_CONFIG = {
     // Keep the tray window out of alt-tab and the overview. The indicator is
     // the way to it now, so its place in the window list is only clutter.
     hide_tray: true,
+    // Do not raise a popup over a fullscreen window, the way GNOME holds its
+    // own banners back. See _overFullscreen.
+    respect_fullscreen: true,
+    // Follow the pointer warp with a synthetic click. Wine does not act on
+    // it today; it is here for the day it does. See pokeTray.
+    tray_virtual_click: true,
 };
+
+// How long the virtual click holds the button down.
+const CLICK_HOLD_MS = 40;
+
+// How long after the last window of a notification another one still counts
+// as part of it. The pieces arrive together and the shadow is redrawn for
+// the length of the slide, so this has to outlast the animation without
+// running into the next message. See _group.
+const GROUP_GAP_US = 3 * 1000 * 1000;
 
 // The window KakaoTalk puts a new message in. It is redrawn as it slides, a
 // fresh window per frame, so this name turns up a lot.
@@ -105,9 +126,10 @@ const RECOVER_COOLDOWN_US = 90 * 1000 * 1000;
 // the app can bring it back, and the only thing it listens to is a click on
 // that tray window.
 //
-// So the click is delivered for real, with a virtual pointer: raise the tray
-// window, warp to it, press and release, warp back. The cursor visibly jumps
-// and returns. That is the cost, and it is why this is a setting.
+// So the button raises the tray window and warps the pointer onto its icon,
+// and a hand does the clicking. A synthetic click is sent as well and Wine
+// ignores it -- see pokeTray, which has the details and the reason it is
+// still sent. The cursor visibly jumps and stays, which is the cost.
 //
 // GTypeName is made unique per load on purpose. GObject registers a type name
 // globally and keeps it, so re-importing this file -- which is the whole
@@ -118,18 +140,43 @@ const TrayIndicator = GObject.registerClass({
 },
 class TrayIndicator extends PanelMenu.Button {
     _init(owner) {
-        // The third argument says not to build a menu. With one, the button
-        // treats a click as "open my menu" and the handler below never runs.
-        super._init(0.5, 'KakaoTalk', true);
+        super._init(0.5, 'KakaoTalk');
         this._owner = owner;
         this.add_child(new St.Icon({
             icon_name: 'kakaotalk',
             style_class: 'system-status-icon',
         }));
-        this.connect('button-press-event', () => {
-            this._owner.pokeTray();
+
+        // The same two actions the app icon's right-click offers, for the
+        // same reason: KakaoTalk's own way out is its tray menu, and that
+        // menu does not open under Wine's Wayland driver. The app icon is
+        // in the grid or the dash; this is already in the panel, next to
+        // the thing it acts on.
+        this.menu.addAction('다시 시작', () => this._owner.restart());
+        this.menu.addAction('종료', () => this._owner.quit());
+    }
+
+    // Not a button-press-event handler, which is what this was before the
+    // menu existed. PanelMenu.Button toggles its menu from vfunc_event,
+    // which runs during the generic 'event' emission and therefore before
+    // any button-press-event handler gets a say -- so a left click would
+    // open the menu first and there would be no stopping it from out there.
+    // Overriding the vfunc is where the decision can actually be made.
+    vfunc_event(event) {
+        const type = event.type();
+        if (type !== Clutter.EventType.BUTTON_PRESS &&
+            type !== Clutter.EventType.TOUCH_BEGIN)
+            return Clutter.EVENT_PROPAGATE;
+
+        if (type === Clutter.EventType.BUTTON_PRESS &&
+            event.get_button() === Clutter.BUTTON_SECONDARY) {
+            this.menu.toggle();
             return Clutter.EVENT_STOP;
-        });
+        }
+
+        this.menu.close();
+        this._owner.pokeTray();
+        return Clutter.EVENT_STOP;
     }
 });
 
@@ -145,6 +192,7 @@ export default class KakaoTalkPopup {
 
     enable() {
         this._pids = new Set();
+        this._burst = null;
         this._config = DEFAULT_CONFIG;
         this._configPath = GLib.build_filenamev(
             [GLib.get_user_config_dir(), 'kakaotalk-popup.json']);
@@ -167,6 +215,7 @@ export default class KakaoTalkPopup {
         this._monitor?.cancel();
         this._monitor = null;
         this._pids = null;
+        this._burst = null;
         if (this._focusId) {
             global.display.disconnect(this._focusId);
             this._focusId = null;
@@ -317,20 +366,55 @@ export default class KakaoTalkPopup {
         this._virtual.notify_absolute_motion(
             GLib.get_monotonic_time(), target[0], target[1]);
 
-        // No synthetic click follows, because one does not work. Tried:
-        // Clutter's virtual pointer device, which reports a real
-        // MetaVirtualInputDeviceNative and whose button constants are sound,
-        // firing press and release at the icon with the pointer measurably
-        // on it and monotonic timestamps. The pointer moves, no exception is
-        // raised, and Wine does not react. With the app's own window as the
-        // test, a poke on its own never brought it back; the times it seemed
-        // to were a real click landing on the icon the pointer had been
-        // parked on.
+        // The click, which does nothing today.
         //
-        // Which is what this does instead: put the pointer on the icon, and
-        // leave the click to a hand. Two clicks rather than one, but the
-        // hunting is gone -- the tray window does not appear in alt-tab, so
-        // reaching it otherwise means a trip through the overview.
+        // What was tried and did not work: this same virtual pointer device
+        // -- a real MetaVirtualInputDeviceNative, sound button constants --
+        // firing press and release at the icon, with the pointer measurably
+        // on it and monotonic timestamps. The pointer moves, no exception is
+        // raised, and Wine does not react. It was tested against the app's
+        // own window too, and a poke on its own never brought it back; the
+        // times it appeared to were a real click landing on the icon the
+        // pointer had been parked on, which is worth saying plainly because
+        // that looked like success twice.
+        //
+        // It is here anyway. Wine's Wayland driver is young and this costs
+        // nothing while it does nothing, so the day the click does land the
+        // indicator becomes one click instead of two without anybody having
+        // to remember this was ever missing. Set tray_virtual_click false to
+        // drop it.
+        //
+        // The pointer stays on the icon either way. That is the part that
+        // works: the hand that follows has something to click, and the tray
+        // window is not in alt-tab, so reaching it otherwise means a trip
+        // through the overview.
+        if (this._config.tray_virtual_click)
+            this._clickHere(target);
+    }
+
+    // Press and release separated in time, as a hand would. A press and
+    // release sharing a timestamp is the kind of thing an input stack is
+    // entitled to discard, and since the point of this is to be ready for a
+    // Wine that starts listening, it should look like a click when it gets
+    // there.
+    _clickHere([x, y]) {
+        const press = () => {
+            if (!this._virtual)
+                return;
+            this._virtual.notify_button(GLib.get_monotonic_time(),
+                Clutter.BUTTON_PRIMARY, Clutter.ButtonState.PRESSED);
+        };
+        const release = () => {
+            if (!this._virtual)
+                return GLib.SOURCE_REMOVE;
+            this._virtual.notify_button(GLib.get_monotonic_time(),
+                Clutter.BUTTON_PRIMARY, Clutter.ButtonState.RELEASED);
+            if (this._config.log)
+                console.log(`${TAG} virtual click at ${x},${y}`);
+            return GLib.SOURCE_REMOVE;
+        };
+        press();
+        GLib.timeout_add(GLib.PRIORITY_DEFAULT, CLICK_HOLD_MS, release);
     }
 
     _loadConfig() {
@@ -446,6 +530,53 @@ export default class KakaoTalkPopup {
             this._apply(rule, window);
             return;
         }
+
+        // No rule of its own, which does not mean it should be left alone.
+        // See _joinGroup.
+        this._joinGroup(window);
+    }
+
+    // One notification is not one window. It arrives as several -- measured
+    // here, a 315-wide shadow that carries the message, a 107x29 strip and a
+    // hairline 465x1 -- and only the shadow has a name to write a rule for.
+    // Placing that one alone is what left the popup in pieces: the shadow
+    // went to the corner and the rest stayed in the middle of the screen
+    // where Wine put them.
+    //
+    // So the offset the shadow was moved by is remembered and everything
+    // else that turns up alongside it moves by the same amount, which keeps
+    // the pieces in the arrangement the app drew them in.
+    //
+    // The pieces arrive before the shadow does, so they wait: until the
+    // shadow has been placed there is no offset to move them by, and moving
+    // them on a guess would only scatter them differently.
+    //
+    // Approximate, deliberately. The shadow is recreated once per animation
+    // frame at a different height and Wine's own origin for it does not hold
+    // still either, so the offset taken from the first frame is up to about
+    // fifty pixels off by the last. Fifty pixels of error against eleven
+    // hundred is the trade, and the alternative -- recomputing per frame --
+    // would drag the static pieces around for the length of the slide.
+    _group() {
+        const now = GLib.get_monotonic_time();
+        if (!this._burst || now > this._burst.until)
+            this._burst = {offset: null, waiting: []};
+        this._burst.until = now + GROUP_GAP_US;
+        return this._burst;
+    }
+
+    _joinGroup(window) {
+        const group = this._group();
+        if (!group.offset) {
+            group.waiting.push(window);
+            return;
+        }
+        this._shift(window, group.offset);
+    }
+
+    _shift(window, offset) {
+        const rect = window.get_frame_rect();
+        window.move_frame(false, rect.x + offset.dx, rect.y + offset.dy);
     }
 
     // Closing Wine's tray window strands the app. KakaoTalk hides rather than
@@ -470,16 +601,40 @@ export default class KakaoTalkPopup {
         });
     }
 
+    // Behind the indicator's right-click menu. Both go through the same
+    // helper the app icon's actions use, so there is one definition of what
+    // restarting means and not two that drift.
+    restart() {
+        this._suppressRecovery();
+        this._runHelper();
+    }
+
+    quit() {
+        this._suppressRecovery();
+        this._runHelper('--quit');
+    }
+
+    // Stopping the app destroys the tray window, and a destroyed tray window
+    // is exactly what _watchTray exists to undo. Asked for it, though, so
+    // there is nothing to undo -- claim the cooldown before the window goes,
+    // and the recovery that would otherwise chase it stands down.
+    _suppressRecovery() {
+        this._lastRecover = GLib.get_monotonic_time();
+    }
+
     // Full path rather than a name on PATH: the shell's PATH is whatever the
     // session started with, and ~/.local/bin is not reliably on it.
     // kakaotalk-bottle puts the symlink there.
-    _runHelper(mode) {
+    //
+    // Variadic because a plain restart is the helper with no argument at
+    // all, and [helper, undefined] is not that.
+    _runHelper(...args) {
         const helper = GLib.build_filenamev(
             [GLib.get_home_dir(), '.local', 'bin', 'kakaotalk-restart']);
         try {
-            Gio.Subprocess.new([helper, mode], Gio.SubprocessFlags.NONE);
+            Gio.Subprocess.new([helper, ...args], Gio.SubprocessFlags.NONE);
         } catch (e) {
-            console.log(`${TAG} ${helper} ${mode} failed: ${e.message}`);
+            console.log(`${TAG} ${helper} ${args.join(' ')} failed: ${e.message}`);
         }
     }
 
@@ -502,7 +657,13 @@ export default class KakaoTalkPopup {
         // layer, which is a stacking change and nothing else -- unlike
         // set_type, which would also hand mutter the placement and scatter
         // the thing across the screen.
-        if (rule.above)
+        //
+        // Except over a fullscreen window, where GNOME's own banners stay
+        // down and this one has no business being the exception. Nothing
+        // here can stop KakaoTalk drawing the popup -- that is the app's
+        // decision and it is not asking -- but declining to raise it leaves
+        // the fullscreen window on top, which is the same thing to look at.
+        if (rule.above && !this._overFullscreen(window))
             window.make_above();
 
         const work = window.get_work_area_current_monitor();
@@ -525,8 +686,27 @@ export default class KakaoTalkPopup {
         x = Math.max(work.x, Math.min(x, work.x + work.width - rect.width));
         y = Math.max(work.y, Math.min(y, work.y + work.height - rect.height));
 
+        // Before the move, because after it the old position is gone and the
+        // offset is what the rest of the notification is waiting for.
+        const group = this._group();
+        if (!group.offset) {
+            group.offset = {dx: x - rect.x, dy: y - rect.y};
+            for (const waiting of group.waiting) {
+                if (waiting.get_compositor_private())
+                    this._shift(waiting, group.offset);
+            }
+            group.waiting = [];
+        }
+
         window.move_frame(false, x, y);
         console.log(`${TAG} ${rule.action} -> ${x},${y}`);
+    }
+
+    _overFullscreen(window) {
+        if (!this._config.respect_fullscreen)
+            return false;
+        const index = window.get_monitor();
+        return index >= 0 && global.display.get_monitor_in_fullscreen(index);
     }
 
     _describe(window) {
