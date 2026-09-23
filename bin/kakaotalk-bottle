@@ -175,12 +175,10 @@ ensure_bottles() {
 # because the client is 64-bit and the 32-bit half is dead weight. Neither
 # has actually been seen to run here -- ensure_runner says why.
 #
-# The reason to reach for this knob is the hang: the chat list is closed with
-# its X, a message arrives, and a window is left that draws nothing. See the
-# README. Whether a newer Wine helps is unknown,
-# and rather less likely than it looked while it was mistaken for a Wayland
-# drawing bug -- it reproduces under both display drivers, so whatever it is
-# sits below them.
+# There is no standing reason to reach for it. Emoji are the one thing left
+# that a newer Wine might fix, and nothing says it would. The window trouble
+# that used to be the reason turned out not to be Wine's at all -- see the
+# README -- so the knob is here for the next question, not for a known bug.
 readonly WINE_VERSION=${KAKAOTALK_WINE:-}
 readonly RUNNER=${WINE_VERSION:+kron4ek-wine-$WINE_VERSION-wow64}
 readonly RUNNER_URL="https://github.com/Kron4ek/Wine-Builds/releases/download/$WINE_VERSION/wine-$WINE_VERSION-amd64-wow64.tar.xz"
@@ -410,9 +408,13 @@ PY
 # right-click menu is the way out here, not a nicety. Two-finger scroll goes
 # too; the same prefix scrolls fine under X11.
 #
-# Unaffected either way: emoji, and the hang. The hang was the reason to
-# suspect this driver in the first place and it reproduces identically under
-# X11, so it is not winewayland's.
+# Unaffected either way: emoji.
+#
+# What this driver does cost, and it took a long time to see it for what it
+# is: a client on Wayland cannot raise its own window. KakaoTalk restoring
+# itself from the tray therefore puts the window back behind everything, and
+# it reads as the app being broken. The panel indicator is the way round it,
+# since the compositor may raise what the client may not.
 #
 # Popup placement is not fixed by this and cannot be: Wayland forbids a
 # client from positioning its own windows, so an app asking for the bottom

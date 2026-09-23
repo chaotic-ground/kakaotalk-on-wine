@@ -1,30 +1,26 @@
 #!/bin/bash
 # Run KakaoTalk with Wine's message tracing on, keeping the last of it.
 #
-# For the hang: the chat list is closed with its X, a message arrives, and a
-# window is left that draws nothing and does nothing with the clicks it does
-# receive. Closing the list is the part that matters; with it merely open, a
-# message does nothing.
+# Written to chase a window that would not come back after the chat list was
+# closed and a message arrived, and it is what answered the question. The
+# app takes the tray click, posts itself a WM_COMMAND, calls ShowWindow, and
+# set_foreground_window succeeds -- none of which reaches the screen, because
+# a Wayland client cannot raise itself. Nothing was wrong with the app or
+# with Wine; the window was behind everything, drawn correctly, waiting for a
+# compositor to raise it.
 #
-# Backtraces said what it is not: nothing is deadlocked, every thread sits in
-# NtUserGetMessage waiting, and the Wayland thread waits on its socket. So
-# the question was never where a thread is stuck but what reaches its queue,
-# which +msg answers directly by logging every message dispatched.
+# Kept for the next question of the same shape, where guessing from the
+# outside had already produced two confident wrong answers.
 #
-# What it answered, first time out: clicks on the stuck window arrive, six
-# clean button pairs, and are followed by 180 WM_TIMER and no WM_PAINT at
-# all. They go to a window that has never painted anything in the whole log,
-# while the one that did all the painting took a WM_CLOSE when the list was
-# closed and has been silent since.
-#
-# No symbols are needed for this, which is the point. The flatpak's Wine is
-# stripped and the backtraces resolve only to module plus offset.
+# No symbols are needed for this, which is the point: the flatpak's Wine is
+# stripped, so a backtrace resolves only to module plus offset while +msg
+# names every message it prints.
 #
 # Usage:
 #   kakaotalk-trace          start traced, and hold the terminal
 #   kakaotalk-trace --off    put WINEDEBUG back and start normally
 #
-# Leave it running. When the window hangs, the log is already on disk --
+# Leave it running. When the window misbehaves the log is already on disk --
 # rewritten every couple of seconds -- so read it then, and take a
 # kakaotalk-hang-report alongside it.
 #

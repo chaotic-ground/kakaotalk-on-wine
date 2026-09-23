@@ -38,7 +38,7 @@ download page; the one every search result hands you is the 32-bit one at
 | New-message popups, bottom right | works, via a shell extension |
 | Menus, tooltips, dialogs in Korean | works |
 | Emoji | **boxes** |
-| The window, after the chat list is closed and a message arrives | **hangs** |
+| The window coming back to the front by itself | **it does not** |
 | Two-finger scroll | **does not reach the app** |
 | Tray icon right-click menu | **nothing happens** |
 | Alt-tab label | says "Bottles" |
@@ -55,44 +55,24 @@ nobody repeats the search:
   32-bit client to the 64-bit one, so it is neither the runner's build nor
   the architecture. Nothing newer than 11.0 has been tried, for the reason
   under "Endpoint antimalware eats Wine" below. See `link_emoji_font`.
-- **The hang.** To reproduce: open the chat list, close it with its X, then
-  wait for a message. Closing it is the part that matters, which took a while
-  to find -- with the list merely open, a message does nothing.
+- **The window does not come back by itself.** Close the chat list with its
+  X, then wait for a message: clicking the tray restores the window and
+  nothing appears. It is not hiding a failure. Traced, the app takes the
+  click, posts itself a `WM_COMMAND`, calls `ShowWindow`, and Wine's
+  `set_foreground_window` succeeds. None of that reaches the screen, because
+  on a Wayland session a client cannot raise itself and winewayland has no
+  xdg-activation -- so the window is restored behind everything, foreground
+  in Wine's bookkeeping and invisible in the compositor's.
 
-  It was called a rendering bug for a long time because that is what it looks
-  like: an empty window, or one showing only freshly painted fragments. Three
-  measurements say otherwise, each ruling out the obvious reading of the one
-  before.
+  Only the compositor can raise it, which is what the panel indicator asks it
+  to do. Left-click it and the window comes forward, correctly drawn.
 
-  *Not a lost drawing.* In the GNOME overview the window's thumbnail shows
-  the desktop wallpaper straight through it, which is a window that has been
-  painted nothing at all rather than one whose content went missing.
+  A leftover makes this worse than it needs to be: every notification strands
+  a 107x29 window titled 카카오톡, the same title the real one carries, and
+  anything matching on title alone finds that instead. The extension did, and
+  spent its click activating it -- see `_findMainWindow`, which now requires
+  some height as well.
 
-  *Not a stuck thread.* Backtraces while it is hung -- `eu-stack`, via
-  `bin/kakaotalk-hang-report` -- show every thread waiting and none holding
-  anything. Thread topology is identical to a healthy instance taken minutes
-  earlier: three message loops in `NtUserGetMessage`, the Wayland thread on
-  its socket, the rest on the wineserver pipe.
-
-  *Not lost input either.* With `+msg` tracing on, clicking the stuck window
-  produces six clean `WM_LBUTTONDOWN`/`WM_LBUTTONUP` pairs. They arrive. What
-  follows them is 180 `WM_TIMER`, 63 `WM_SYSTIMER` and exactly zero
-  `WM_PAINT`.
-
-  What the trace does show is that the clicks go to a window which has never
-  painted anything in the entire log, while the window that did all the
-  painting -- 4045 `WM_PAINT` to one handle -- took a `WM_CLOSE` at the
-  moment the list was closed and has been silent since. So something outlives
-  the window it belonged to, and input landing on it goes somewhere
-  unrelated. That is as far as it has been taken.
-
-  It reproduces identically under the X11 driver, so it is not winewayland's,
-  and whatever it is sits below the display driver -- which points at window
-  lifetime in win32u rather than at either driver.
-
-  Do not attach winedbg to it. That was tried on a live instance and the app
-  was gone a moment later, taking the reproduction with it. `eu-stack`
-  attaches, walks and detaches, which is why the report uses it.
 - **Two-finger scroll** is not picked up by Wine's Wayland driver. Confirmed
   by switching that one registry key: the same prefix under the X11 driver
   scrolls.
@@ -179,10 +159,15 @@ disable/enable instead of a logout.
   Drops Wine's stale monitor record on the way past.
 - `bin/wayland-screenshot` — capture through the desktop portal, for when the
   app's windows are no longer XWayland and nothing else can see them.
-- `bin/kakaotalk-hang-report` — run it while the window is stuck. Thread
-  states, and backtraces resolved to module plus offset off the process's own
-  memory map, since nothing here carries symbols and bare addresses say
-  nothing. `eu-stack`, not `winedbg`: it attaches, walks and detaches.
+- `bin/kakaotalk-hang-report` — thread states, and backtraces resolved to
+  module plus offset off the process's own memory map, since nothing here
+  carries symbols and bare addresses say nothing. `eu-stack`, not `winedbg`:
+  it attaches, walks and detaches, where winedbg killed the process it was
+  asked about. Written to diagnose a window believed to be hung; nothing was
+  hung, and the report is what established that.
+- `bin/kakaotalk-trace` — runs the app under `WINEDEBUG=+msg`, keeping the
+  last of the firehose in a ring. It is what turned guesses about the window
+  into the `ShowWindow`/`set_foreground_window` sequence above.
 - `config/kakaotalk-korean.reg` — UI language and Latin font substitutions,
   applied as a Bottles registry rule so a runner swap cannot undo it.
 - `config/kakaotalk-popup.json` — rules for the extension below.

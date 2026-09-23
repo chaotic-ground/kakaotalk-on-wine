@@ -1,26 +1,25 @@
 #!/bin/bash
 # Take a report of a wedged KakaoTalk, without killing it.
 #
-# The failure this is for: the chat list is closed with its X, a message
-# arrives, and a window is left that draws nothing. Closing the list is the
-# part that matters; with it merely open, a message does nothing.
+# Written for a window believed to be hung, which was not hung. Keeping it
+# because the answer came out of running it, and the next thing that looks
+# like a hang deserves the same treatment before anyone theorises.
 #
-# Nothing is drawn, rather than the drawing being lost: in the GNOME overview
-# its thumbnail shows the desktop wallpaper straight through, which is what a
-# window painted nothing at all looks like. Clicks on it do arrive -- traced
-# -- and no WM_PAINT follows them. It reproduces under both the Wayland and
-# the X11 driver, so it is not the display driver.
+# What it showed: every thread waiting, none holding anything, and a thread
+# topology identical to a healthy instance taken minutes earlier. That ruled
+# out the reading the symptom invited and sent the search to kakaotalk-trace,
+# which found the window was being restored and simply never raised.
 #
-# All of which says the UI thread is stuck rather than that Wine is drawing
-# badly, and the way to find out where is a backtrace taken while it is
-# stuck. Hence this, and hence eu-stack rather than winedbg: winedbg was
-# tried once, on a live instance of exactly this, and the app was gone a
-# moment later. eu-stack attaches with ptrace, walks the threads and
-# detaches. It reads native frames, so Wine's own machinery shows up by name
-# and the app's PE code as bare addresses, which is enough to tell a thread
-# waiting on the wineserver from one wedged somewhere in win32u.
+# eu-stack rather than winedbg: winedbg was tried once, on a live instance,
+# and the app was gone a moment later, taking the reproduction with it.
+# eu-stack attaches with ptrace, walks the threads and detaches. It reads
+# native frames, so Wine's own machinery shows up by name and the app's PE
+# code as bare addresses, which is enough to tell a thread waiting on the
+# wineserver from one wedged somewhere in win32u.
 #
-# Run it while the window is stuck. Afterwards is no use.
+# Run it while the window is misbehaving. Afterwards is no use, and a report
+# from a healthy instance is worth taking too -- the comparison is what made
+# the first one mean anything.
 #
 #   kakaotalk-hang-report [output-file]
 set -euo pipefail
@@ -117,9 +116,9 @@ fi
   echo
   echo "## Windows, if the X11 driver is in use"
   # Under winewayland there is no X window to ask about and this says so.
-  # Under winex11 the geometry is worth having: the hang has been seen with
-  # the window at a plausible size and position, which rules out the
-  # simplest explanations.
+  # Under winex11 the geometry is worth having: a window at a plausible size
+  # and position rules out the simplest explanations, and that is exactly
+  # what it turned out to be.
   if command -v xdotool >/dev/null && [[ -n ${DISPLAY:-} ]]; then
     for w in $(xdotool search --class -- kakaotalk 2>/dev/null); do
       name=$(xdotool getwindowname "$w" 2>/dev/null || true)
