@@ -173,11 +173,14 @@ ensure_bottles() {
 #
 # The wow64 variant of the kron4ek build rather than the plain amd64 one,
 # because the client is 64-bit and the 32-bit half is dead weight. Neither
-# has actually been seen to run here -- ensure_runner says why -- so the one
-# reason to reach for this knob is the reason it exists: sys-wine 11.0 draws
-# KakaoTalk's window in fragments after a while, only the parts last
-# repainted on an otherwise empty rectangle, and whether a newer Wine fixes
-# that is still an open question.
+# has actually been seen to run here -- ensure_runner says why.
+#
+# The reason to reach for this knob is the hang: with the chat list open, a
+# new message arrives and the window stops, drawing nothing further and
+# taking no clicks. See the README. Whether a newer Wine helps is unknown,
+# and rather less likely than it looked while it was mistaken for a Wayland
+# drawing bug -- it reproduces under both display drivers, so whatever it is
+# sits below them.
 readonly WINE_VERSION=${KAKAOTALK_WINE:-}
 readonly RUNNER=${WINE_VERSION:+kron4ek-wine-$WINE_VERSION-wow64}
 readonly RUNNER_URL="https://github.com/Kron4ek/Wine-Builds/releases/download/$WINE_VERSION/wine-$WINE_VERSION-amd64-wow64.tar.xz"
@@ -391,12 +394,21 @@ PY
 # cursor is before opening a menu gets that frozen answer, which is why the
 # tray popup landed at the far edge of the screen.
 #
-# This is a trade, not a win. What it buys: new-message popups appear at all.
+# This is a trade, not a win, and both sides of it have since been measured
+# by flipping this one key on an otherwise untouched prefix.
+#
+# What it buys: new-message popups appear at all. Under X11 not one arrives,
+# still true of the 64-bit client.
+#
 # What it costs: no Wayland system tray protocol exists, so Wine draws the
-# tray as a floating window whose right-click does nothing -- the desktop
-# entry's actions are the way out now, not a nicety -- and two-finger scroll
-# stops working, which Wine's Wayland driver does not pick up from the
-# touchpad. Emoji are unaffected either way.
+# tray as a floating window whose right-click does nothing, where X11 gives a
+# real XEmbed icon with a working menu -- which is why the indicator's
+# right-click menu is the way out here, not a nicety. Two-finger scroll goes
+# too; the same prefix scrolls fine under X11.
+#
+# Unaffected either way: emoji, and the hang. The hang was the reason to
+# suspect this driver in the first place and it reproduces identically under
+# X11, so it is not winewayland's.
 #
 # Popup placement is not fixed by this and cannot be: Wayland forbids a
 # client from positioning its own windows, so an app asking for the bottom

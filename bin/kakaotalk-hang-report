@@ -1,0 +1,134 @@
+#!/bin/bash
+# Take a report of a wedged KakaoTalk, without killing it.
+#
+# The failure this is for: with the chat list open, a new message arrives and
+# the window stops. Nothing is drawn -- in the GNOME overview its thumbnail
+# shows the desktop wallpaper straight through, which is what an X11 window
+# with a ParentRelative background looks like when the app has painted
+# nothing at all -- and clicks do not land. Resizing it from outside with
+# xdotool produces no repaint either, and a resize is a WM_PAINT: an app
+# whose message loop is running would have drawn something. It reproduces
+# under both the Wayland and the X11 driver, so it is not the display driver.
+#
+# All of which says the UI thread is stuck rather than that Wine is drawing
+# badly, and the way to find out where is a backtrace taken while it is
+# stuck. Hence this, and hence eu-stack rather than winedbg: winedbg was
+# tried once, on a live instance of exactly this, and the app was gone a
+# moment later. eu-stack attaches with ptrace, walks the threads and
+# detaches. It reads native frames, so Wine's own machinery shows up by name
+# and the app's PE code as bare addresses, which is enough to tell a thread
+# waiting on the wineserver from one wedged somewhere in win32u.
+#
+# Run it while the window is stuck. Afterwards is no use.
+#
+#   kakaotalk-hang-report [output-file]
+set -euo pipefail
+IFS=$'\n\t'
+
+readonly OUT=${1:-$HOME/kakaotalk-hang-$(date +%Y%m%d-%H%M%S).txt}
+
+# Rewrite each bare address in eu-stack's output as module+offset, read off
+# the process's own memory map. The offset is from the module's lowest
+# mapping, which is what addr2line wants if anyone goes further.
+#
+# -c rather than a heredoc on stdin, which is where the backtrace arrives:
+# `python3 -` reads the program from stdin too, so the heredoc won that
+# argument and the data never got in. It failed silently, with a zero exit
+# and an empty section.
+resolve_addresses() {
+  python3 -c '
+import re, sys
+
+bases = {}
+spans = []
+try:
+    with open("/proc/" + sys.argv[1] + "/maps") as maps:
+        for line in maps:
+            fields = line.split(maxsplit=5)
+            if len(fields) < 6:
+                continue
+            path = fields[5].strip()
+            if not path or path.startswith("["):
+                continue
+            low, high = (int(part, 16) for part in fields[0].split("-"))
+            spans.append((low, high, path))
+            bases[path] = min(bases.get(path, low), low)
+except OSError:
+    # The process can go while this runs, which is not worth failing over --
+    # the addresses are still there, just unlabelled.
+    pass
+
+def label(match):
+    address = int(match.group(0), 16)
+    for low, high, path in spans:
+        if low <= address < high:
+            name = path.rsplit("/", 1)[-1]
+            return "%s %s+0x%x" % (match.group(0), name, address - bases[path])
+    return match.group(0)
+
+for line in sys.stdin:
+    sys.stdout.write(re.sub(r"0x[0-9a-f]{6,16}", label, line))
+' "$1"
+}
+
+# shellcheck disable=SC2009  # the name to match on is a Windows path
+pid=$(ps -eo pid=,args= | grep -a '[K]akaoTalk\.exe' | awk '{print $1; exit}')
+if [[ -z ${pid:-} ]]; then
+  echo "KakaoTalk is not running" >&2
+  exit 1
+fi
+
+{
+  echo "# KakaoTalk hang report, $(date -Is), pid $pid"
+  echo
+  echo "## Threads, as the kernel sees them"
+  # State and wchan per thread. A stuck UI thread that is waiting on
+  # something names what it is waiting on here; one spinning does not.
+  printf '%-8s %-6s %-24s %s\n' TID STATE WCHAN NAME
+  for task in /proc/"$pid"/task/*; do
+    tid=${task##*/}
+    printf '%-8s %-6s %-24s %s\n' \
+      "$tid" \
+      "$(awk '{print $3}' "$task/stat" 2>/dev/null)" \
+      "$(cat "$task/wchan" 2>/dev/null || echo -)" \
+      "$(cat "$task/comm" 2>/dev/null || echo -)"
+  done
+
+  echo
+  echo "## Backtraces"
+  # -p walks every thread of the process. It stops them briefly and lets
+  # them go again, which is the whole reason this is not winedbg.
+  #
+  # Through the resolver, because nothing here carries symbols: the flatpak's
+  # Wine is stripped and KakaoTalk was never going to ship any, so eu-stack
+  # prints sixty-odd bare addresses and they say nothing at all. Module plus
+  # offset does say something -- whether the stuck thread is inside ntdll
+  # waiting on the wineserver, inside win32u or the display driver, or in
+  # KakaoTalk's own code -- and that is the first fork in the road.
+  #
+  # The status is ignored on purpose. eu-stack exits non-zero because it
+  # cannot find DWARF for a stripped Wine, which is exactly the case this
+  # runs in and says nothing about whether the walk succeeded -- the frames
+  # come out regardless. Left alone it takes the whole report with it, and
+  # the sections below never run.
+  eu-stack -p "$pid" 2>&1 | resolve_addresses "$pid" || true
+
+  echo
+  echo "## Windows, if the X11 driver is in use"
+  # Under winewayland there is no X window to ask about and this says so.
+  # Under winex11 the geometry is worth having: the hang has been seen with
+  # the window at a plausible size and position, which rules out the
+  # simplest explanations.
+  if command -v xdotool >/dev/null && [[ -n ${DISPLAY:-} ]]; then
+    for w in $(xdotool search --class -- kakaotalk 2>/dev/null); do
+      name=$(xdotool getwindowname "$w" 2>/dev/null || true)
+      geom=$(xdotool getwindowgeometry --shell "$w" 2>/dev/null | tr '\n' ' ' || true)
+      [[ $geom == *WIDTH=1\ HEIGHT=1* ]] && continue  # message-only windows
+      echo "$w [$name] $geom"
+    done
+  else
+    echo "(no DISPLAY or no xdotool -- winewayland, or nothing to ask)"
+  fi
+} >"$OUT" 2>&1
+
+echo "$OUT"
