@@ -41,9 +41,10 @@
 // "max_width"/"max_height" as bounds on the frame. Actions are "pointer"
 // (top left corner to the cursor), "bottom-right" (against the work area's
 // corner), and "none" (match and leave alone, to keep a broader rule below
-// from taking it).
+// from taking it). "above": true also keeps the window on top.
 
 import Clutter from 'gi://Clutter';
+import Meta from 'gi://Meta';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
@@ -72,7 +73,18 @@ const DEFAULT_CONFIG = {
     tray_click: {from_left: 20, from_bottom: 15},
     // Restart KakaoTalk when its tray window is closed. See _watchTray.
     recover_tray: true,
+    // Stop a new-message popup taking focus in the first place. See
+    // _disarmPopup. keep_focus is the fallback for anything that slips
+    // through before the title is known.
+    keep_focus: true,
+    // Keep the tray window out of alt-tab and the overview. The indicator is
+    // the way to it now, so its place in the window list is only clutter.
+    hide_tray: true,
 };
+
+// The window KakaoTalk puts a new message in. It is redrawn as it slides, a
+// fresh window per frame, so this name turns up a lot.
+const POPUP_TITLE = 'KakaoTalkShadowWnd';
 
 // A restart destroys the tray window on its way, which would look exactly
 // like the thing being recovered from. Long enough to cover a restart, short
@@ -142,6 +154,7 @@ export default class KakaoTalkPopup {
 
         this._createdId = global.display.connect('window-created',
             (_display, window) => this._onWindowCreated(window));
+        this._watchFocus();
         this._addIndicator();
         console.log(`${TAG} enabled, config=${this._configPath}`);
     }
@@ -154,6 +167,11 @@ export default class KakaoTalkPopup {
         this._monitor?.cancel();
         this._monitor = null;
         this._pids = null;
+        if (this._focusId) {
+            global.display.disconnect(this._focusId);
+            this._focusId = null;
+        }
+        this._lastFocused = null;
         this._indicator?.destroy();
         this._indicator = null;
         this._virtual = null;
@@ -173,13 +191,43 @@ export default class KakaoTalkPopup {
             const pid = window.get_pid();
             if (pid > 0)
                 this._pids.add(pid);
-            if (owned_tray_check(wmClass))
+            if (owned_tray_check(wmClass)) {
                 this._watchTray(window);
+                // Windows that were already up when this loaded never went
+                // through _onWindowCreated, so re-type them here too.
+                this._retype(window);
+            }
             if (this._config.log)
                 console.log(`${TAG} present: ${this._describe(window)}`);
         }
     }
 
+
+    // A new message arrives and its popup takes the keyboard with it, which
+    // in the middle of typing somewhere else is worse than missing the
+    // message. The popup is not something anyone types into, so hand the
+    // focus straight back to whatever had it.
+    //
+    // Restoring focus raises this again with the old window as the subject,
+    // which is not a popup, so it records and stops there rather than
+    // bouncing.
+    _watchFocus() {
+        this._focusId = global.display.connect('notify::focus-window', () => {
+            if (!this._config.keep_focus)
+                return;
+            const focused = global.display.focus_window;
+            if (!focused)
+                return;
+            if (focused.get_title() !== POPUP_TITLE) {
+                this._lastFocused = focused;
+                return;
+            }
+            const previous = this._lastFocused;
+            if (!previous || previous.get_compositor_private() === null)
+                return;
+            previous.activate(global.get_current_time());
+        });
+    }
 
     _addIndicator() {
         if (!this._config.tray_indicator)
@@ -214,7 +262,7 @@ export default class KakaoTalkPopup {
             if (!this._pids.has(window.get_pid()))
                 continue;
             const title = window.get_title();
-            if (title === 'KakaoTalkShadowWnd' || title === '')
+            if (title === POPUP_TITLE || title === '')
                 continue;
             if (title === '카카오톡')
                 return window;
@@ -306,7 +354,64 @@ export default class KakaoTalkPopup {
         this._monitor.connect('changed', () => this._loadConfig());
     }
 
+    // Take the focus grab away before it happens, rather than undoing it.
+    //
+    // Mutter decides focus-on-map in window_state_on_map, from the window
+    // type alone: NORMAL, DIALOG and MODAL_DIALOG take focus, everything
+    // else -- NOTIFICATION among them -- does not. KakaoTalk's popup arrives
+    // as NORMAL. Re-typing it as what it actually is settles the question
+    // before it is asked.
+    //
+    // There is room to do it because a Wayland window cannot be shown until a
+    // buffer is attached, and Wine sends get_toplevel, app_id and title in
+    // one flush before that first buffer. So the title is known while the
+    // window is still unshowable, and therefore still unfocusable.
+    //
+    // It also drops the popup out of alt-tab and the overview, which is what
+    // one wants from a notification anyway.
+    // Returns true once the window has been dealt with and needs no further
+    // watching.
+    _retype(window) {
+        // The popup is deliberately left alone. Re-typing it to NOTIFICATION
+        // does stop the focus grab -- mutter only gives focus on map to
+        // NORMAL, DIALOG and MODAL_DIALOG -- but it also takes the placement
+        // away from the app: mutter then puts the window at 0,32 instead of
+        // where KakaoTalk asked, and the popup is two windows, a shadow and
+        // an untitled one holding the message. Moving the shadow to the
+        // corner leaves the message behind in the top left. A fix that
+        // scatters the notification is worse than the focus it saves, so
+        // focus is handed back afterwards instead. See _watchFocus.
+
+        // The tray is a window Wine keeps up for as long as the app runs, and
+        // UTILITY is what it is: not something to tab to, but not a
+        // notification either. Mutter's recalc makes both skip the taskbar,
+        // which is what takes it out of alt-tab and the overview.
+        if (this._config.hide_tray && window.get_wm_class() === 'explorer.exe') {
+            if (window.get_window_type() !== Meta.WindowType.UTILITY)
+                window.set_type(Meta.WindowType.UTILITY);
+            return true;
+        }
+        return false;
+    }
+
     _onWindowCreated(window) {
+        // The title is usually not set yet at creation, so watch for it. One
+        // of these fires before the window can be shown.
+        if (!this._retype(window)) {
+            // Neither name is set yet at creation. Whichever arrives first
+            // still beats the window becoming showable, since Wine sends both
+            // before the buffer that would allow it.
+            const ids = [];
+            const check = () => {
+                if (!this._retype(window))
+                    return;
+                for (const id of ids)
+                    window.disconnect(id);
+            };
+            ids.push(window.connect('notify::title', check));
+            ids.push(window.connect('notify::wm-class', check));
+        }
+
         // Nothing is settled at creation -- no title, no final size -- so
         // wait for the first frame before looking or moving.
         const actor = window.get_compositor_private();
@@ -392,6 +497,14 @@ export default class KakaoTalkPopup {
     }
 
     _apply(rule, window) {
+        // A notification that opens behind the window being worked in is not
+        // a notification. make_above puts it in mutter's "always on top"
+        // layer, which is a stacking change and nothing else -- unlike
+        // set_type, which would also hand mutter the placement and scatter
+        // the thing across the screen.
+        if (rule.above)
+            window.make_above();
+
         const work = window.get_work_area_current_monitor();
         const rect = window.get_frame_rect();
         let x, y;

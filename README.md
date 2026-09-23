@@ -27,6 +27,7 @@ is installed on the host.
 | Korean UI, Hangul everywhere | works |
 | Tray icon, click to restore the window | works |
 | Panel indicator: raise, restore or start | works, via the extension |
+| Popup on top, and out of the window list | works, via the extension |
 | Recovery if the tray window is closed | works, via the extension |
 | New-message popups, bottom right | works, via a shell extension |
 | Menus, tooltips, dialogs in Korean | works |

@@ -54,6 +54,20 @@ launch() {
 
 stop() {
   running || return 0
+
+  # Ask before insisting. taskkill without /f sends WM_CLOSE, which is what a
+  # Windows app expects and what gives KakaoTalk the chance to write its
+  # session out. Killing the process outright does not, and a login that has
+  # to be typed again is the visible cost of that.
+  timeout 60 flatpak run --command=bottles-cli "$FLATPAK_ID" shell -b "$BOTTLE" \
+    -i 'taskkill /im KakaoTalk.exe' >/dev/null 2>&1 || true
+
+  for _ in {1..15}; do
+    running || return 0
+    sleep 1
+  done
+
+  # It did not go. Insist.
   pkill -f 'KakaoTalk\.exe' || true
   # Wait for the prefix to go quiet. A new instance started while the old
   # wineserver is still winding down tends to exit without a window.
