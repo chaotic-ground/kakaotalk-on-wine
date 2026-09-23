@@ -1,0 +1,102 @@
+#!/bin/bash
+# Run KakaoTalk with Wine's message tracing on, keeping the last of it.
+#
+# For the hang: with the chat list open a message arrives and the window
+# stops drawing and stops taking clicks. Backtraces said what it is not --
+# nothing is deadlocked, every thread including that window's sits in
+# NtUserGetMessage waiting, and the Wayland thread waits on its socket. So
+# the question is not where a thread is stuck but whether messages reach its
+# queue at all, and +msg answers that directly: it logs every message
+# dispatched, and the tail of it at the moment of the hang shows what the
+# window last received before the silence.
+#
+# No symbols are needed for this, which is the point. The flatpak's Wine is
+# stripped and the backtraces resolve only to module plus offset.
+#
+# Usage:
+#   kakaotalk-trace          start traced, and hold the terminal
+#   kakaotalk-trace --off    put WINEDEBUG back and start normally
+#
+# Leave it running. When the window hangs, the log is already on disk --
+# rewritten every couple of seconds -- so read it then, and take a
+# kakaotalk-hang-report alongside it.
+#
+# Set KAKAOTALK_WINEDEBUG for other channels; +win and +event are the
+# neighbours worth reaching for.
+set -euo pipefail
+IFS=$'\n\t'
+
+readonly FLATPAK_ID=com.usebottles.bottles
+readonly BOTTLE=KakaoTalk
+readonly PROGRAM=카카오톡
+readonly CHANNELS=${KAKAOTALK_WINEDEBUG:-+timestamp,+msg}
+readonly LOG=${KAKAOTALK_TRACE_LOG:-$HOME/kakaotalk-trace.log}
+
+# Lines kept. +msg is a firehose, so this is a ring rather than the whole
+# stream: what matters is the end of it, and an unbounded log would fill the
+# disk long before anybody read it.
+readonly KEEP=${KAKAOTALK_TRACE_LINES:-300000}
+
+readonly REPO="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)"
+
+set_debug() {
+  timeout 120 flatpak run --command=bottles-cli "$FLATPAK_ID" \
+    edit -b "$BOTTLE" --env-var "WINEDEBUG=$1" >/dev/null 2>&1
+}
+
+if [[ ${1-} == --off ]]; then
+  "$REPO/bin/kakaotalk-restart" --quit
+  set_debug -all
+  echo "WINEDEBUG=-all; starting normally"
+  exec "$REPO/bin/kakaotalk-restart" --start
+fi
+
+if [[ -n ${1-} ]]; then
+  echo "usage: ${0##*/} [--off]" >&2
+  exit 2
+fi
+
+"$REPO/bin/kakaotalk-restart" --quit
+set_debug "$CHANNELS"
+
+echo "WINEDEBUG=$CHANNELS"
+echo "keeping the last $KEEP lines in $LOG"
+echo "leave this running; Ctrl-C puts WINEDEBUG back"
+
+# Back to -all whatever happens, because a bottle left tracing is a bottle
+# that runs slowly for reasons nobody will remember tomorrow.
+#
+# INT TERM HUP as well as EXIT, not EXIT alone: bash runs an EXIT trap when
+# the script ends, and when a signal kills it that is not what happens. Found
+# the way these things are -- a test run cut short by timeout, which sends
+# TERM, and a bottle left tracing afterwards.
+trap 'set_debug -all; echo; echo "WINEDEBUG restored"; exit' EXIT INT TERM HUP
+
+flatpak run --command=bottles-cli "$FLATPAK_ID" run -b "$BOTTLE" -p "$PROGRAM" 2>&1 |
+  python3 -c '
+import collections, signal, sys, time
+
+keep, path = int(sys.argv[1]), sys.argv[2]
+ring = collections.deque(maxlen=keep)
+last = 0.0
+
+def flush():
+    with open(path, "w") as out:
+        out.write("".join(ring))
+
+# Rewritten on a timer rather than at the end. The interesting moment is
+# while the window is still hung and someone is looking at it, and a log that
+# only appears once the app is closed is no use for that.
+signal.signal(signal.SIGUSR1, lambda *_: flush())
+try:
+    for line in sys.stdin:
+        ring.append(line)
+        now = time.monotonic()
+        if now - last > 2:
+            last = now
+            flush()
+except KeyboardInterrupt:
+    pass
+finally:
+    flush()
+' "$KEEP" "$LOG"
