@@ -49,9 +49,8 @@
 // fullscreen window -- see "respect_fullscreen" and _overFullscreen.
 //
 // A rule places one window, but a notification is several of them and only
-// one carries a name worth matching. The rest move by the same offset, so
-// they stay in the arrangement the app drew them in rather than being left
-// behind in the middle of the screen. See _joinGroup.
+// one carries a name worth matching. The rest are placed by the same rule,
+// rather than left in the middle of the screen. See _joinGroup.
 
 import Clutter from 'gi://Clutter';
 import Meta from 'gi://Meta';
@@ -99,6 +98,9 @@ const DEFAULT_CONFIG = {
     // Re-type a notification's windows as NOTIFICATION so mutter never gives
     // them the focus to begin with. See _markNotification.
     popup_notification_type: true,
+    // Hide the popup's furniture: the shadow, and the strip a notification
+    // leaves behind. Neither carries the message. See _hideChrome.
+    hide_popup_chrome: true,
 };
 
 // How long the virtual click holds the button down.
@@ -107,14 +109,10 @@ const CLICK_HOLD_MS = 40;
 // How long after the last window of a notification another one still counts
 // as part of it. Measured: a piece arrived 2.54s before the shadow it
 // belongs to, which a three second window caught by half a second. Five,
-// then, since being too slow strands a piece in the middle of the screen and
-// being too generous costs nothing now that GROUP_REACH decides membership.
+// then, since being too slow strands a piece in the middle of the screen.
+// Too generous costs a stray dialog dragged to the corner, which the height
+// floor in _isPopupWindow keeps to small ones.
 const GROUP_GAP_US = 5 * 1000 * 1000;
-
-// How far outside the shadow a window may sit and still be part of the same
-// notification. Generous enough for the strip and the hairline, which sit
-// within about a hundred pixels of it, and far short of a chat window.
-const GROUP_REACH = 160;
 
 // The window KakaoTalk puts a new message in. It is redrawn as it slides, a
 // fresh window per frame, so this name turns up a lot.
@@ -257,6 +255,10 @@ export default class KakaoTalkPopup {
             const pid = window.get_pid();
             if (pid > 0)
                 this._pids.add(pid);
+            // Furniture that was already up when this loaded. Without this
+            // a reload leaves whatever is on screen exactly as it was, which
+            // is a poor way to find out whether a change works.
+            this._hideChrome(window);
             if (owned_tray_check(wmClass)) {
                 this._watchTray(window);
                 // Windows that were already up when this loaded never went
@@ -568,6 +570,57 @@ export default class KakaoTalkPopup {
         window.set_type(Meta.WindowType.NOTIFICATION);
     }
 
+    // Not UTILITY, which is what one reaches for first and does not do this:
+    // it takes a window out of alt-tab and the overview and leaves it on the
+    // screen exactly where it was. Taking it off the screen means hiding the
+    // actor mutter draws it with.
+    //
+    // Two windows are worth hiding and the message is not one of them. The
+    // shadow draws no shadow -- Wine renders it as a plain white rectangle,
+    // which is the border sitting around the popup rather than under it --
+    // and the 107x29 strip is a leftover that outlives the notification
+    // without ever holding anything.
+    //
+    // The message window is the untitled one, so an empty title is the thing
+    // to leave alone.
+    _hideChrome(window) {
+        if (!this._config.hide_popup_chrome)
+            return false;
+        const title = window.get_title();
+        if (title !== POPUP_TITLE && title !== '카카오톡') {
+            this._watchChrome(window);
+            return false;
+        }
+        window.get_compositor_private()?.hide();
+        return true;
+    }
+
+    // The title is not there yet when the window first paints, and the strip
+    // is told apart from the message by nothing else -- both are owned, both
+    // are small, and at that moment both are untitled. So the first look
+    // said "message", placed it in the corner and left it on screen, and the
+    // name arrived afterwards. It was out of the overview by then, which
+    // made it look handled: that is NOTIFICATION setting skip_taskbar, not
+    // anything here.
+    _watchChrome(window) {
+        if (window._kakaotalkChromeWatch)
+            return;
+        const id = window.connect('notify::title', () => {
+            const title = window.get_title();
+            if (title !== POPUP_TITLE && title !== '카카오톡')
+                return;
+            window.disconnect(id);
+            window._kakaotalkChromeWatch = false;
+            window.get_compositor_private()?.hide();
+        });
+        window._kakaotalkChromeWatch = true;
+        window.connect('unmanaged', () => {
+            if (window._kakaotalkChromeWatch)
+                window.disconnect(id);
+            window._kakaotalkChromeWatch = false;
+        });
+    }
+
     _onWindowCreated(window) {
         // The title is usually not set yet at creation, so watch for it. One
         // of these fires before the window can be shown.
@@ -650,46 +703,56 @@ export default class KakaoTalkPopup {
     _group() {
         const now = GLib.get_monotonic_time();
         if (!this._burst || now > this._burst.until)
-            this._burst = {anchor: null, offset: null, waiting: [], members: []};
+            this._burst = {rule: null, waiting: [], members: []};
         this._burst.until = now + GROUP_GAP_US;
         return this._burst;
     }
 
     _joinGroup(window) {
         const group = this._group();
-        if (!group.anchor) {
+        // The pieces arrive before the shadow does, and until a rule has
+        // matched there is no action to place them by, so they wait.
+        if (!group.rule) {
             group.waiting.push(window);
             return;
         }
-        this._shiftIfNear(window, group);
+        this._placeMember(window, group);
     }
 
-    // Being in the burst is not enough to be part of the notification. Every
-    // window of KakaoTalk's that no rule claims lands here -- the main
-    // window, a chat window, an update dialog -- and any of them opening in
-    // the seconds around a message would be dragged into the corner with it.
-    // Seen in the log at 392x642 and 340x500, minutes away from a popup by
-    // luck rather than by design.
+    // Each piece is placed on its own, rather than the group being carried
+    // by one offset. That was the design until mutter took the placement
+    // away: re-typing the popup to NOTIFICATION -- which is what stops it
+    // stealing the focus, and is worth more than tidy placement -- means
+    // mutter puts the window where it likes, and it likes 0,32. Measured, in
+    // the log, with the shadow sitting at 0,32 while its pieces were still
+    // out at 1048,736. An offset taken from that anchor is an offset from
+    // nowhere, and every piece then failed the neighbourhood test and was
+    // stranded mid-screen.
     //
-    // Where they are is what tells them apart, and it is the honest test: a
-    // notification is one thing drawn in several pieces, so its pieces sit
-    // on top of each other. Anything that does not fit in the shadow's own
-    // neighbourhood was never part of it.
-    _shiftIfNear(window, group) {
-        const rect = window.get_frame_rect();
-        const near = group.anchor;
-        const inside =
-            rect.x >= near.x - GROUP_REACH &&
-            rect.y >= near.y - GROUP_REACH &&
-            rect.x + rect.width <= near.x + near.width + GROUP_REACH &&
-            rect.y + rect.height <= near.y + near.height + GROUP_REACH;
-        if (!inside) {
+    // So relative arrangement is not something this can preserve any more,
+    // and placing each piece against the same corner is the nearest thing
+    // that survives. It lands close to right anyway: the shadow is 315x135
+    // and the message window 310x129, so bottom-aligning both puts the
+    // message inside its own shadow, which is where it was drawn to be.
+    //
+    // Membership is the burst and nothing else now -- the position test it
+    // used to have cannot work when positions are mutter's to decide. Being
+    // owned, small and within GROUP_GAP_US of the popup is what is left, and
+    // the height floor is what keeps the main window out of it.
+    _placeMember(window, group) {
+        if (!window.get_compositor_private())
+            return;
+        if (!this._isPopupWindow(window)) {
             if (this._config.log)
                 console.log(`${TAG} not part of the popup: ${this._describe(window)}`);
             return;
         }
         this._markNotification(window);
-        window.move_frame(false, rect.x + group.offset.dx, rect.y + group.offset.dy);
+        if (this._hideChrome(window))
+            return;
+        const target = this._targetFor(window, group.rule?.action ?? 'none');
+        if (target)
+            window.move_frame(false, target[0], target[1]);
         if (!group.members.includes(window))
             group.members.push(window);
     }
@@ -783,9 +846,8 @@ export default class KakaoTalkPopup {
     _apply(rule, window) {
         // A notification that opens behind the window being worked in is not
         // a notification. make_above puts it in mutter's "always on top"
-        // layer, which is a stacking change and nothing else -- unlike
-        // set_type, which would also hand mutter the placement and scatter
-        // the thing across the screen.
+        // layer, and raise moves it up within that layer -- which the focus
+        // used to do, before the popup was re-typed so as not to take any.
         //
         // Except over a fullscreen window, where GNOME's own banners stay
         // down and this one has no business being the exception. Nothing
@@ -793,56 +855,61 @@ export default class KakaoTalkPopup {
         // decision and it is not asking -- but declining to raise it leaves
         // the fullscreen window on top, which is the same thing to look at.
         if (rule.above && !this._overFullscreen(window)) {
-            // raise as well as make_above. make_above puts the window in
-            // mutter's always-on-top layer but does not move it within that
-            // layer, and a window that never takes the focus is never raised
-            // by the focus either -- which is exactly what re-typing it to
-            // NOTIFICATION arranges. Together they were the two halves of
-            // "the popup stopped coming to the front".
             window.make_above();
             window.raise();
-            if (this._config.log)
-                console.log(`${TAG} above=${window.is_above()} type=${window.get_window_type()}`);
         }
 
+        if (this._hideChrome(window)) {
+            // Hidden, but the group still needs the rule: the message window
+            // is placed by it and arrives before this one does.
+            const hidden = this._group();
+            hidden.rule = rule;
+            for (const waiting of hidden.waiting)
+                this._placeMember(waiting, hidden);
+            hidden.waiting = [];
+            this._raiseGroupMembers(hidden);
+            return;
+        }
+
+        const target = this._targetFor(window, rule.action);
+        if (!target)
+            return;
+
+        const group = this._group();
+        group.rule = rule;
+        for (const waiting of group.waiting)
+            this._placeMember(waiting, group);
+        group.waiting = [];
+
+        window.move_frame(false, target[0], target[1]);
+        console.log(`${TAG} ${rule.action} -> ${target[0]},${target[1]}`);
+        this._raiseGroupMembers(group);
+    }
+
+    // Where a window should end up, clamped to the monitor whatever the rule
+    // asked for. Null means the rule says to leave it alone, or says nothing
+    // this understands.
+    _targetFor(window, action) {
         const work = window.get_work_area_current_monitor();
         const rect = window.get_frame_rect();
         let x, y;
 
-        if (rule.action === 'none') {
-            return;
-        } else if (rule.action === 'pointer') {
+        if (action === 'none') {
+            return null;
+        } else if (action === 'pointer') {
             [x, y] = global.get_pointer();
-        } else if (rule.action === 'bottom-right') {
+        } else if (action === 'bottom-right') {
             x = work.x + work.width - rect.width - MARGIN;
             y = work.y + work.height - rect.height - MARGIN;
         } else {
-            console.log(`${TAG} unknown action ${rule.action}`);
-            return;
+            console.log(`${TAG} unknown action ${action}`);
+            return null;
         }
 
-        // Keep it on the monitor whatever the rule asked for.
-        x = Math.max(work.x, Math.min(x, work.x + work.width - rect.width));
-        y = Math.max(work.y, Math.min(y, work.y + work.height - rect.height));
-
-        // Before the move, because after it the old position is gone, and
-        // where this window was is both the offset the rest of the
-        // notification is waiting for and the neighbourhood that says which
-        // of them belong to it.
-        const group = this._group();
-        if (!group.anchor) {
-            group.anchor = {x: rect.x, y: rect.y, width: rect.width, height: rect.height};
-            group.offset = {dx: x - rect.x, dy: y - rect.y};
-            for (const waiting of group.waiting) {
-                if (waiting.get_compositor_private())
-                    this._shiftIfNear(waiting, group);
-            }
-            group.waiting = [];
-        }
-
-        window.move_frame(false, x, y);
-        console.log(`${TAG} ${rule.action} -> ${x},${y}`);
-        this._raiseGroupMembers(group);
+        return [
+            Math.max(work.x, Math.min(x, work.x + work.width - rect.width)),
+            Math.max(work.y, Math.min(y, work.y + work.height - rect.height)),
+        ];
     }
 
     _overFullscreen(window) {

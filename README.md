@@ -37,6 +37,7 @@ download page; the one every search result hands you is the 32-bit one at
 | Popup never taking the focus | works, via the extension |
 | Recovery if the tray window is closed | works, via the extension |
 | New-message popups, bottom right | works, via a shell extension |
+| The leftover window a notification strands | hidden, via the extension |
 | Menus, tooltips, dialogs in Korean | works |
 | Emoji | **boxes** |
 | The window coming back to the front by itself | **it does not** |
@@ -72,7 +73,9 @@ nobody repeats the search:
   a 107x29 window titled 카카오톡, the same title the real one carries, and
   anything matching on title alone finds that instead. The extension did, and
   spent its click activating it -- see `_findMainWindow`, which now requires
-  some height as well.
+  some height as well. The leftover is also hidden outright now, along with
+  the popup's shadow, which Wine draws as a plain white rectangle around the
+  message rather than a shadow under it. See `_hideChrome`.
 
 - **Two-finger scroll** is not picked up by Wine's Wayland driver. Confirmed
   by switching that one registry key: the same prefix under the X11 driver
