@@ -98,10 +98,16 @@ const DEFAULT_CONFIG = {
 const CLICK_HOLD_MS = 40;
 
 // How long after the last window of a notification another one still counts
-// as part of it. The pieces arrive together and the shadow is redrawn for
-// the length of the slide, so this has to outlast the animation without
-// running into the next message. See _group.
-const GROUP_GAP_US = 3 * 1000 * 1000;
+// as part of it. Measured: a piece arrived 2.54s before the shadow it
+// belongs to, which a three second window caught by half a second. Five,
+// then, since being too slow strands a piece in the middle of the screen and
+// being too generous costs nothing now that GROUP_REACH decides membership.
+const GROUP_GAP_US = 5 * 1000 * 1000;
+
+// How far outside the shadow a window may sit and still be part of the same
+// notification. Generous enough for the strip and the hairline, which sit
+// within about a hundred pixels of it, and far short of a chat window.
+const GROUP_REACH = 160;
 
 // The window KakaoTalk puts a new message in. It is redrawn as it slides, a
 // fresh window per frame, so this name turns up a lot.
@@ -560,23 +566,45 @@ export default class KakaoTalkPopup {
     _group() {
         const now = GLib.get_monotonic_time();
         if (!this._burst || now > this._burst.until)
-            this._burst = {offset: null, waiting: []};
+            this._burst = {anchor: null, offset: null, waiting: []};
         this._burst.until = now + GROUP_GAP_US;
         return this._burst;
     }
 
     _joinGroup(window) {
         const group = this._group();
-        if (!group.offset) {
+        if (!group.anchor) {
             group.waiting.push(window);
             return;
         }
-        this._shift(window, group.offset);
+        this._shiftIfNear(window, group);
     }
 
-    _shift(window, offset) {
+    // Being in the burst is not enough to be part of the notification. Every
+    // window of KakaoTalk's that no rule claims lands here -- the main
+    // window, a chat window, an update dialog -- and any of them opening in
+    // the seconds around a message would be dragged into the corner with it.
+    // Seen in the log at 392x642 and 340x500, minutes away from a popup by
+    // luck rather than by design.
+    //
+    // Where they are is what tells them apart, and it is the honest test: a
+    // notification is one thing drawn in several pieces, so its pieces sit
+    // on top of each other. Anything that does not fit in the shadow's own
+    // neighbourhood was never part of it.
+    _shiftIfNear(window, group) {
         const rect = window.get_frame_rect();
-        window.move_frame(false, rect.x + offset.dx, rect.y + offset.dy);
+        const near = group.anchor;
+        const inside =
+            rect.x >= near.x - GROUP_REACH &&
+            rect.y >= near.y - GROUP_REACH &&
+            rect.x + rect.width <= near.x + near.width + GROUP_REACH &&
+            rect.y + rect.height <= near.y + near.height + GROUP_REACH;
+        if (!inside) {
+            if (this._config.log)
+                console.log(`${TAG} not part of the popup: ${this._describe(window)}`);
+            return;
+        }
+        window.move_frame(false, rect.x + group.offset.dx, rect.y + group.offset.dy);
     }
 
     // Closing Wine's tray window strands the app. KakaoTalk hides rather than
@@ -686,14 +714,17 @@ export default class KakaoTalkPopup {
         x = Math.max(work.x, Math.min(x, work.x + work.width - rect.width));
         y = Math.max(work.y, Math.min(y, work.y + work.height - rect.height));
 
-        // Before the move, because after it the old position is gone and the
-        // offset is what the rest of the notification is waiting for.
+        // Before the move, because after it the old position is gone, and
+        // where this window was is both the offset the rest of the
+        // notification is waiting for and the neighbourhood that says which
+        // of them belong to it.
         const group = this._group();
-        if (!group.offset) {
+        if (!group.anchor) {
+            group.anchor = {x: rect.x, y: rect.y, width: rect.width, height: rect.height};
             group.offset = {dx: x - rect.x, dy: y - rect.y};
             for (const waiting of group.waiting) {
                 if (waiting.get_compositor_private())
-                    this._shift(waiting, group.offset);
+                    this._shiftIfNear(waiting, group);
             }
             group.waiting = [];
         }
