@@ -175,9 +175,9 @@ ensure_bottles() {
 # because the client is 64-bit and the 32-bit half is dead weight. Neither
 # has actually been seen to run here -- ensure_runner says why.
 #
-# The reason to reach for this knob is the hang: with the chat list open, a
-# new message arrives and the window stops, drawing nothing further and
-# taking no clicks. See the README. Whether a newer Wine helps is unknown,
+# The reason to reach for this knob is the hang: the chat list is closed with
+# its X, a message arrives, and a window is left that draws nothing. See the
+# README. Whether a newer Wine helps is unknown,
 # and rather less likely than it looked while it was mistaken for a Wayland
 # drawing bug -- it reproduces under both display drivers, so whatever it is
 # sits below them.

@@ -1,14 +1,21 @@
 #!/bin/bash
 # Run KakaoTalk with Wine's message tracing on, keeping the last of it.
 #
-# For the hang: with the chat list open a message arrives and the window
-# stops drawing and stops taking clicks. Backtraces said what it is not --
-# nothing is deadlocked, every thread including that window's sits in
+# For the hang: the chat list is closed with its X, a message arrives, and a
+# window is left that draws nothing and does nothing with the clicks it does
+# receive. Closing the list is the part that matters; with it merely open, a
+# message does nothing.
+#
+# Backtraces said what it is not: nothing is deadlocked, every thread sits in
 # NtUserGetMessage waiting, and the Wayland thread waits on its socket. So
-# the question is not where a thread is stuck but whether messages reach its
-# queue at all, and +msg answers that directly: it logs every message
-# dispatched, and the tail of it at the moment of the hang shows what the
-# window last received before the silence.
+# the question was never where a thread is stuck but what reaches its queue,
+# which +msg answers directly by logging every message dispatched.
+#
+# What it answered, first time out: clicks on the stuck window arrive, six
+# clean button pairs, and are followed by 180 WM_TIMER and no WM_PAINT at
+# all. They go to a window that has never painted anything in the whole log,
+# while the one that did all the painting took a WM_CLOSE when the list was
+# closed and has been silent since.
 #
 # No symbols are needed for this, which is the point. The flatpak's Wine is
 # stripped and the backtraces resolve only to module plus offset.
