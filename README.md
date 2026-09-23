@@ -49,14 +49,40 @@ The five that do not work are Wine's or Wayland's, not settings. Each is
 written up where the code deals with it, along with what was ruled out, so
 nobody repeats the search:
 
-- **Emoji** are not a composition problem -- one box per emoji, not two, so
-  surrogate pairs are being put together. The fallback never happens: the
-  emoji face is installed, Wine loads it, the SystemLink entries are read at
-  startup, and missing glyphs still never reach it. Unchanged across the
-  flatpak's Wine 11.0 and the soda runner, and unchanged by moving from the
-  32-bit client to the 64-bit one, so it is neither the runner's build nor
-  the architecture. Nothing newer than 11.0 has been tried, for the reason
-  under "Endpoint antimalware eats Wine" below. See `link_emoji_font`.
+- **Emoji** cannot be fixed from out here, and the reason is measurable. Wine
+  looks a glyph up one UTF-16 code unit at a time, so an astral character
+  arrives as its two surrogate halves and is looked up as each of them
+  separately. Drawing 🎁 in the prefix's own notepad under `WINEDEBUG=+font`:
+
+  ```
+  NtGdiGetGlyphIndicesW (hdc, L"\d83c", 1, ...)
+  NtGdiGetGlyphIndicesW (hdc, L"\df81", 1, ...)
+  ```
+
+  U+D83C and U+DF81 are in no font's cmap, both come back as the missing
+  glyph, and that is the pair of boxes each emoji shows as. `win32u/font.c`
+  contains no surrogate handling at all -- no `surrogate`, no `0xd800`, no
+  `0x10000` -- so the lookup never sees U+1F381 and no font link can supply
+  it. Where the two halves ought to be joined is the next thing to find out;
+  that they are not is settled.
+
+  Which makes a long search make sense in hindsight. Fonts were installed,
+  substituted, linked under the app's face name and under others, and none of
+  it moved: the fallback was never the thing failing. Worth keeping one
+  finding from that search, because it cost a day on its own and is true
+  regardless: a font link is keyed on the family name Wine actually uses, and
+  for NanumGothic.ttf that is the Korean 나눔고딕, not NanumGothic. The file
+  carries both names, whichever comes second becomes a substitution for the
+  first -- `create_family` registers that itself, with nothing in the
+  registry to show for it -- and a link keyed on a substituted name is
+  discarded:
+
+  ```
+  L"NanumGothic": SystemLink entry for substituted font, ignoring
+  ```
+
+  See `link_emoji_font`, which keys on 나눔고딕 and is now correct without
+  being useful.
 - **The window does not come back by itself.** Close the chat list with its
   X, then wait for a message: clicking the tray restores the window and
   nothing appears. It is not hiding a failure. Traced, the app takes the

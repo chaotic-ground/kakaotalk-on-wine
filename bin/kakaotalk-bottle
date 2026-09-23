@@ -30,15 +30,13 @@
 # reach the app. New-message popups do appear, which they did not before,
 # though not where the app asks for them.
 #
-# Known limitation: emoji come out as boxes. Not a composition problem --
-# notepad in this prefix draws one box per astral emoji, not two, so the
-# surrogate pairs are being put together correctly and the pairs of boxes in
-# KakaoTalk are the emoji plus its variation selector. What fails is the
-# fallback: the emoji face is installed, Wine loads it, and the SystemLink
-# entries are read at startup, yet missing glyphs never reach it. Tried and
-# didn't help: linking under the substituted name and under the name the app
-# asks for, linking from a face that is not a substitution target at all
-# (Arial, same boxes), and the soda runner. Hangul is unaffected throughout.
+# Known limitation: emoji come out as boxes, and nothing here can change
+# that. Wine looks a glyph up one UTF-16 code unit at a time, so an astral
+# character is looked up as each of its two surrogate halves -- neither of
+# which is in any font -- and the pair of boxes is the pair of halves. See
+# the README for the trace. Font links cannot reach a codepoint the lookup
+# never assembles, which is why every arrangement of them was tried and none
+# of them moved.
 #
 # Known limitation, already chased down once: alt-tab labels the window
 # "Bottles", not 카카오톡. GNOME trusts a window's sandbox identity over the
@@ -374,7 +372,19 @@ lines = ["Windows Registry Editor Version 5.00", "",
          r"[HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Fonts]",
          '"Noto Emoji (TrueType)"="NotoEmoji-Regular.ttf"', "",
          r"[HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\FontLink\SystemLink]"]
-for base in ("맑은 고딕", "Malgun Gothic", "Meiryo UI", "Arial", "Tahoma", "System"):
+# 나눔고딕 first and not by accident. Wine keys a font link on the family
+# name it actually uses, and for NanumGothic.ttf that is the Korean one:
+# the file carries both, and a +font trace says family_name L"나눔고딕",
+# second_name L"NanumGothic". Whichever name comes second becomes a
+# substitution for the first -- create_family does that itself -- and a link
+# keyed on a substituted name is thrown away with
+#
+#   L"NanumGothic": SystemLink entry for substituted font, ignoring
+#
+# which is what happened to every entry below it, since 맑은 고딕, Malgun
+# Gothic and Tahoma are all substituted here too. They are kept because they
+# cost nothing and would matter in a prefix without those substitutions.
+for base in ("나눔고딕", "맑은 고딕", "Malgun Gothic", "Meiryo UI", "Arial", "Tahoma", "System"):
     lines.append('"%s"=hex(7):%s' % (base, link))
 lines.append("")
 open(sys.argv[1], "w", encoding="utf-16-le").write("﻿" + "\n".join(lines))
