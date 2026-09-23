@@ -43,9 +43,37 @@ running() {
 # watching nothing happen clicks again, and the second client kills the first
 # and itself with it, so the wait is not merely wasted, it undoes the launch
 # that was already on its way.
-starting() {
+# Measured, so that the number means something: a start takes about nine
+# seconds from a warm prefix. A launcher older than this is not working, it is
+# left over -- bottles-cli run routinely outlives the app it started -- and
+# treating one as a launch in progress blocks every future start for good.
+readonly LAUNCH_SECONDS=60
+
+# $1 is a comparison against the launcher's age in seconds, as awk sees it.
+launcher_pids() {
   # shellcheck disable=SC2009  # matching on the full command line, not a name
-  ps -eo args= | grep -a "bottles-cli run -b $BOTTLE" | grep -qav grep
+  ps -eo pid=,etimes=,args= |
+    awk -v pattern="bottles-cli run -b $BOTTLE" -v limit="$LAUNCH_SECONDS" \
+      -v want="$1" 'index($0, pattern) &&
+        ((want == "young" && $2 < limit) || (want == "old" && $2 >= limit)) { print $1 }'
+}
+
+starting() {
+  [[ -n $(launcher_pids young) ]]
+}
+
+# A launcher with no app under it and no youth to excuse it. Left alone it
+# keeps starting() true for good, and every later start is refused.
+reap_stale_launchers() {
+  running && return 0
+  local stale
+  stale=$(launcher_pids old)
+  [[ -z $stale ]] && return 0
+  # -9, because the bwrap wrapper flatpak puts around these sits through a
+  # plain TERM. There is no app underneath to shut down gracefully -- that is
+  # what makes it stale -- so there is nothing to be careful of.
+  echo "$stale" | xargs -r kill -9 2>/dev/null || true
+  sleep 1
 }
 
 launch() {
@@ -79,6 +107,7 @@ stop() {
 
 case ${1-} in
   --start)
+    reap_stale_launchers
     if running || starting; then
       # Up, or on its way. Doing nothing is not much, but it is better than
       # the alternative, which is killing it.
