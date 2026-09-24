@@ -1,25 +1,28 @@
-// Put KakaoTalk's new-message popup where the app asks for it.
+// Wine의 Wayland 드라이버가 부족한 부분을 컴포지터 쪽에서 메운다.
 //
-// Wayland does not let a client position its own windows. KakaoTalk's popup
-// asks for the bottom right corner and arrives mid-screen instead, and no
-// amount of work inside Wine can change that. The compositor can, so it
-// does the placing.
+// Wayland는 클라이언트가 자기 창 위치를 정하게 두지 않는다. 카카오톡의
+// 팝업은 오른쪽 아래를 요청하지만 화면 가운데에 도착하고, Wine 안에서
+// 무엇을 해도 그건 바뀌지 않는다. 컴포지터는 할 수 있으니 여기서 놓는다.
 //
-// The tray menu is not in scope, though it looks like the same problem.
-// Right-clicking the floating tray window produces no window at all -- not a
-// misplaced one -- so there is nothing here to move. Wine's Wayland driver
-// appears not to realise those menus as windows. Left-clicking the same
-// window does work and restores the main window, which is worth knowing
-// before anyone decides the tray is useless and hides it.
+// 하는 일은 넷이다.
 //
-// The pointer action is kept because it is correct and cost nothing to
-// leave: a client cannot ask where the cursor is either, and the compositor
-// can, so any menu that does turn up as a window can be put under it.
+//   새 메시지 팝업을 제자리에 놓고, 포커스를 뺏지 못하게 한다. 팝업에
+//   답장 입력칸이 있어서, 포커스가 넘어간 동안 친 글자는 사라지는 게
+//   아니라 대화방에 입력된다.
 //
-// The rules live in a JSON file, not in here, and are re-read when it
-// changes. That is not tidiness: a Wayland session offers no way to make the
-// shell reload an extension's code, so every edit to this file costs a
-// logout, while an edit to the config costs nothing.
+//   Wayland에 프로토콜이 없어서 Wine이 떠 있는 창으로 그리는 트레이를
+//   대신한다. 패널 인디케이터를 좌클릭하면 창이 돌아오고, 우클릭하면
+//   카카오톡 자신의 메뉴가 열린다.
+//
+//   앱이 자기 창 위에 그리는 것들을 그 위로 돌려놓는다. 대화를 스크롤할
+//   때 뜨는 날짜 같은 것.
+//
+//   아무것도 설치되어 있지 않으면 설치를 권한다. 확장은 샌드박스 안의 앱이
+//   자기를 놓을 수 없는 자리에 살기 때문에, 랜딩 포인트가 된다.
+//
+// 규칙은 여기가 아니라 JSON 파일에 있고, 바뀌면 다시 읽는다. 단정함
+// 때문이 아니다. Wayland 세션에는 셸이 확장의 코드를 다시 읽게 할 방법이
+// 없어서, 이 파일을 고치면 로그아웃이 필요하고 설정을 고치면 공짜다.
 //
 //   ~/.config/kakaotalk-popup.json
 //   {
@@ -29,29 +32,27 @@
 //     ]
 //   }
 //
-// 12 is NOTIFICATION, and it is in that list because this re-types the
-// popup's windows to it -- see _markNotification. A rule naming only NORMAL
-// stops matching the moment that happens, and takes the placement with it.
+// 12가 NOTIFICATION이고 그 목록에 들어있는 이유는, 이 확장이 팝업의 창을
+// 그 타입으로 바꾸기 때문이다. _markNotification을 보라. NORMAL만 적은
+// 규칙은 그 순간부터 매칭을 멈추고 위치 조정도 같이 멈춘다.
 //
-// Turn "log" on to find out what a window looks like before writing a rule
-// for it. That is how KakaoTalkShadowWnd was named: a message arrived while
-// the log was running and the popup announced itself, 315 wide, its height
-// growing and shrinking as it slid. Do not go by size alone -- Firefox's
-// menus come through the same width as KakaoTalk's, with no class and no
-// title, which is why ownership is settled by pid.
+// 규칙을 쓰기 전에 창이 어떻게 생겼는지 보려면 "log"를 켜라.
+// KakaoTalkShadowWnd라는 이름도 그렇게 알아냈다. 로그를 켜둔 채 메시지가
+// 왔고 팝업이 자기 이름을 밝혔다. 폭 315에 미끄러지면서 높이가 늘었다
+// 줄었다 했다. 크기만 보고 판단하지 마라. Firefox의 메뉴가 카카오톡 것과
+// 같은 폭으로, 클래스도 제목도 없이 온다. 소유를 pid로 가리는 이유다.
 //
-// A rule matches a window owned by one of KakaoTalk's processes when every
-// field it names matches: "type" against Meta.WindowType, "title" exactly,
-// "max_width"/"max_height" as bounds on the frame. Actions are "pointer"
-// (top left corner to the cursor), "bottom-right" (against the work area's
-// corner), and "none" (match and leave alone, to keep a broader rule below
-// from taking it). "above": true also keeps the window on top, except over a
-// fullscreen window -- see "respect_fullscreen" and _overFullscreen.
+// 규칙은 카카오톡 프로세스가 가진 창에 대해, 적어둔 모든 항목이 맞을 때
+// 매칭된다. "type"은 Meta.WindowType, "title"은 정확히 일치,
+// "max_width"/"max_height"는 프레임의 상한이다. 동작은 "pointer"(왼쪽 위
+// 모서리를 커서에), "bottom-right"(작업 영역의 모서리에), "none"(매칭하고
+// 그대로 둔다. 아래의 더 넓은 규칙이 가져가지 못하게). "above": true면
+// 창을 위에 유지하는데, 전체화면 창 위에서는 아니다.
+// "respect_fullscreen"과 _overFullscreen을 보라.
 //
-// A rule places one window, but a notification is several of them and only
-// one carries a name worth matching. The rest are placed by the same rule,
-// rather than left in the middle of the screen. See _joinGroup.
-
+// 규칙 하나는 창 하나를 놓지만 알림은 여러 창이고 그중 하나만 매칭할 만한
+// 이름을 갖고 있다. 나머지는 화면 가운데 남기지 않고 같은 규칙으로
+// 놓는다. _joinGroup을 보라.
 import Clutter from 'gi://Clutter';
 import Meta from 'gi://Meta';
 import Gio from 'gi://Gio';
@@ -60,134 +61,128 @@ import GObject from 'gi://GObject';
 import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
-// Loaded by extension.js, which re-imports this file on every enable so it
-// can be edited without logging out. Plain class, not an Extension subclass:
-// the shell only ever sees the loader.
+// extension.js가 읽어온다. 로그아웃 없이 고칠 수 있도록 enable()마다 이
+// 파일을 다시 import한다. Extension의 하위 클래스가 아니라 그냥 클래스인
+// 이유는, 셸이 보는 것은 언제나 로더뿐이기 때문이다.
 
 const TAG = '[kakaotalk-popup]';
-// The flatpak this extension stands for. Checked by looking for its
-// directory rather than by running flatpak info: the menu asks on every
-// open, and the answer is a file that is either there or not.
+// 이 확장이 대신하는 flatpak. flatpak info를 돌리는 대신 디렉터리가 있는지
+// 본다. 메뉴가 열릴 때마다 묻는 질문이고, 답은 있거나 없는 파일 하나다.
 const APP_ID = 'io.github.chaotic_ground.KakaoTalk';
 const MARGIN = 16;
-// Wine gives its own windows these, but a menu arrives with no class at all,
-// so ownership is tracked by the pids these windows come from.
+// Wine이 자기 창에 붙이는 클래스. 다만 메뉴는 클래스 없이 오므로, 소유는
+// 이 창들이 나온 pid로 추적한다.
 const OWNER_CLASSES = ['kakaotalk.exe', 'explorer.exe'];
 
 const DEFAULT_CONFIG = {
     log: true,
     rules: [],
     tray_indicator: true,
-    // Where in the tray window the icon sits, since the click has to land on
-    // the icon and not merely inside the window. From the left edge, and from
-    // the bottom edge, because the title bar Wine draws makes the top a poor
-    // thing to measure from. Tunable without touching code: getting this
-    // wrong is silent, the click simply does nothing.
+    // 트레이 창 안에서 아이콘이 있는 자리. 클릭이 창 안 아무 데가 아니라
+    // 아이콘에 떨어져야 한다. 왼쪽 끝과 아래쪽 끝에서 잰다. Wine이 그리는
+    // 제목 표시줄 때문에 위에서 재는 것은 좋지 않다. 코드를 건드리지 않고
+    // 조절할 수 있게 뒀다. 틀려도 조용해서, 클릭이 그냥 아무 일도 안
+    // 한다.
     tray_click: {from_left: 20, from_bottom: 15},
-    // Restart KakaoTalk when its tray window is closed. See _watchTray.
+    // 트레이 창이 닫히면 카카오톡을 다시 시작한다. _watchTray를 보라.
     recover_tray: true,
-    // Stop a new-message popup taking focus in the first place. See
-    // _disarmPopup. keep_focus is the fallback for anything that slips
-    // through before the title is known.
+    // 새 메시지 팝업이 애초에 포커스를 가져가지 못하게 한다.
+    // _disarmPopup을 보라. keep_focus는 제목을 알기 전에 빠져나간 것들을
+    // 위한 대비책이다.
     keep_focus: true,
-    // Keep the tray window out of alt-tab and the overview. The indicator is
-    // the way to it now, so its place in the window list is only clutter.
+    // 트레이 창을 alt-tab과 오버뷰에서 뺀다. 이제 가는 길은 인디케이터라,
+    // 창 목록의 그 자리는 잡동사니일 뿐이다.
     hide_tray: true,
-    // And off the screen, where the app can be asked directly instead. See
-    // _retype.
+    // 그리고 화면 밖으로. 앱에 직접 물어볼 수 있으니. _retype을 보라.
     hide_tray_window: true,
-    // Do not raise a popup over a fullscreen window, the way GNOME holds its
-    // own banners back. See _overFullscreen.
+    // 전체화면 창 위로 팝업을 올리지 않는다. GNOME이 자기 배너를 참는 것과
+    // 같다. _overFullscreen을 보라.
     respect_fullscreen: true,
-    // Follow the pointer warp with a synthetic click. Wine does not act on
-    // it today; it is here for the day it does. See pokeTray.
+    // 포인터를 옮긴 뒤 합성 클릭을 보낸다. 지금 Wine은 반응하지 않는다.
+    // 언젠가 반응할 날을 위해 있다. pokeTray를 보라.
     tray_virtual_click: true,
-    // Re-type a notification's windows as NOTIFICATION so mutter never gives
-    // them the focus to begin with. See _markNotification.
+    // 알림의 창들을 NOTIFICATION으로 바꿔서 mutter가 애초에 포커스를 주지
+    // 않게 한다. _markNotification을 보라.
     popup_notification_type: true,
-    // Hide the popup's furniture: the shadow, and the strip a notification
-    // leaves behind. Neither carries the message. See _hideChrome.
+    // 팝업의 장식을 숨긴다. 그림자와, 알림이 남기는 띠. 둘 다 메시지를
+    // 담고 있지 않다. _hideChrome을 보라.
     hide_popup_chrome: true,
-    // Put what the app draws over its own window back over it -- the date
-    // that appears while a conversation is scrolled. See _placeOverlay.
+    // 앱이 자기 창 위에 그리는 것을 그 위로 돌려놓는다. 대화를 스크롤할 때
+    // 뜨는 날짜 같은 것. _placeOverlay를 보라.
     place_overlays: true,
 };
 
-// How long the virtual click holds the button down.
+// 합성 클릭이 버튼을 누르고 있는 시간.
 const CLICK_HOLD_MS = 40;
 
-// How long after the last window of a notification another one still counts
-// as part of it. Measured: a piece arrived 2.54s before the shadow it
-// belongs to, which a three second window caught by half a second. Five,
-// then, since being too slow strands a piece in the middle of the screen.
-// Too generous costs a stray dialog dragged to the corner, which the height
-// floor in _isPopupWindow keeps to small ones.
+// 알림의 마지막 창 뒤로 얼마 동안 다른 창을 같은 알림의 일부로 볼지.
+// 재봤다. 한 조각이 자기 그림자보다 2.54초 먼저 왔고, 3초 창으로는 0.5초
+// 차이로 잡혔다. 그래서 5초다. 너무 짧으면 조각 하나가 화면 가운데
+// 남는다. 너무 넉넉하면 엉뚱한 대화상자가 구석으로 끌려가는데,
+// _isPopupWindow의 높이 하한이 그걸 작은 것들로 제한한다.
 const GROUP_GAP_US = 5 * 1000 * 1000;
 
-// The window KakaoTalk puts a new message in. It is redrawn as it slides, a
-// fresh window per frame, so this name turns up a lot.
+// 카카오톡이 새 메시지를 담는 창. 미끄러지는 동안 프레임마다 새 창으로
+// 다시 그려져서 이 이름이 자주 나온다.
 const POPUP_TITLE = 'KakaoTalkShadowWnd';
 
-// Below this, a window claiming to be 카카오톡 is a leftover rather than the
-// thing itself. See _findMainWindow.
+// 이보다 작으면서 자기를 카카오톡이라고 하는 창은 진짜가 아니라 남은
+// 것이다. _findMainWindow를 보라.
 const MAIN_MIN_HEIGHT = 240;
 
-// The band an owned untitled window has to fall in to be something the app
-// draws over its own window, like the date that appears while a conversation
-// is scrolled. Measured: that date is 82x33, a notification's shadow is 318
-// wide and its message not much less.
+// 제목 없는 소유 창이 "앱이 자기 창 위에 그리는 것"으로 인정받으려면 들어야
+// 하는 크기 범위. 대화를 스크롤할 때 뜨는 날짜 같은 것이다. 재봤다. 그
+// 날짜는 82x33이고, 알림의 그림자는 폭 318, 메시지도 그보다 별로 작지
+// 않다.
 //
-// The floor is not decoration. Without it this took a 16x16 window -- there
-// are several, and what they are for is not known here -- moved it over the
-// conversation and put it permanently above everything. Whatever they are,
-// they are not something to be placed. See _placeOverlay.
+// 하한은 장식이 아니다. 없을 때 16x16짜리 창을 집어다가 대화창 위로 옮기고
+// 영구히 맨 앞에 올렸다. 그런 창이 여럿 있는데 무엇을 위한 것인지 여기서는
+// 모른다. 무엇이든 간에 위치를 정해줄 대상은 아니다. _placeOverlay를
+// 보라.
 const OVERLAY_MAX_WIDTH = 200;
 const OVERLAY_MIN_WIDTH = 40;
 const OVERLAY_MIN_HEIGHT = 20;
 
-// Where in the window it belongs over: centred, and down far enough to clear
-// the room's header. A twelfth of the height is what that comes to at the
-// sizes this is seen at. The app knows the real answer and the compositor
-// cannot ask it, so this is near rather than right.
+// 올라갈 창 안에서의 자리. 가운데, 그리고 방 머리글을 지날 만큼 아래로.
+// 이 크기들에서는 높이의 12분의 1쯤이 그 자리다. 진짜 답은 앱이 알고
+// 컴포지터는 물어볼 수 없다. 맞다기보다 가까운 값이다.
 const OVERLAY_TOP_FRACTION = 0.12;
 
-// How long after asking for the app's menu a new window may be that menu. It
-// arrives about a second later; the rest is slack. Short, because during it a
-// message popup would be mistaken for the menu and dragged to the pointer --
-// which happened, with a notification landing under the panel indicator.
-// The expectation is also spent on the first window that takes it, and does
-// not apply while a notification is being assembled, so this is the last
-// line rather than the only one.
+// 앱의 메뉴를 요청한 뒤 얼마 동안 새 창을 그 메뉴로 볼지. 메뉴는 1초쯤
+// 뒤에 오고 나머지는 여유다. 짧게 잡는 이유는 그동안 메시지 팝업이 메뉴로
+// 오인되어 포인터 자리로 끌려가기 때문이다. 실제로 알림이 패널 인디케이터
+// 아래 떨어졌다. 기대는 그걸 가져가는 첫 번째 창에서 소진되고, 알림이
+// 조립되는 중에는 적용되지 않는다. 그래서 이것은 유일한 방어선이 아니라
+// 마지막 방어선이다.
 const MENU_GRACE_US = 3 * 1000 * 1000;
 
-// A restart destroys the tray window on its way, which would look exactly
-// like the thing being recovered from. Long enough to cover a restart, short
-// enough that a second accident a minute later is still caught.
+// 재시작은 가는 길에 트레이 창을 없애는데, 그건 복구 대상과 똑같아 보인다.
+// 재시작을 덮을 만큼 길고, 1분 뒤의 두 번째 사고는 여전히 잡을 만큼
+// 짧게.
 const RECOVER_COOLDOWN_US = 90 * 1000 * 1000;
 
 
-// A panel button that stands in for Wine's floating tray window.
+// Wine이 떠 있는 창으로 그리는 트레이를 대신하는 패널 버튼.
 //
-// Under Wayland there is no system tray protocol, so Wine draws the tray as
-// an ordinary window. It works -- a left click on it brings KakaoTalk's
-// window back -- but it does not appear in alt-tab, so reaching it means a
-// trip through the overview, which is a lot of ceremony for one click.
+// Wayland에는 시스템 트레이 프로토콜이 없어서 Wine은 트레이를 평범한 창으로
+// 그린다. 좌클릭하면 카카오톡 창이 돌아오니 동작은 한다. 다만 alt-tab에
+// 안 나와서 거기 가려면 오버뷰를 거쳐야 하는데, 클릭 한 번 치고는 격식이
+// 과하다.
 //
-// The button cannot simply restore the window itself. KakaoTalk does not
-// minimise, it hides: once it goes to the tray its window stops existing as
-// far as the compositor is concerned, so there is nothing to activate. Only
-// the app can bring it back, and the only thing it listens to is a click on
-// that tray window.
+// 버튼이 창을 직접 복원할 수는 없다. 카카오톡은 최소화가 아니라 숨기기를
+// 한다. 트레이로 들어가면 컴포지터가 보기에 그 창은 존재하기를 멈추므로
+// 활성화할 대상이 없다. 되돌릴 수 있는 것은 앱뿐이고, 앱이 듣는 것은 그
+// 트레이 창에 온 클릭뿐이다.
 //
-// So the button raises the tray window and warps the pointer onto its icon,
-// and a hand does the clicking. A synthetic click is sent as well and Wine
-// ignores it -- see pokeTray, which has the details and the reason it is
-// still sent. The cursor visibly jumps and stays, which is the cost.
+// 그래서 버튼은 트레이 창을 올리고 포인터를 그 아이콘 위로 옮기고, 클릭은
+// 손이 한다. 합성 클릭도 같이 보내는데 Wine은 무시한다. 자세한 것과 그래도
+// 보내는 이유는 pokeTray에 있다. 커서가 눈에 띄게 튀어서 그 자리에 남는
+// 것이 그 값이다.
 //
-// GTypeName is made unique per load on purpose. GObject registers a type name
-// globally and keeps it, so re-importing this file -- which is the whole
-// point of the loader -- would otherwise fail with "already registered" and
-// take the extension down with it.
+// GTypeName을 읽을 때마다 다르게 만드는 것은 일부러다. GObject는 타입
+// 이름을 전역으로 등록하고 계속 들고 있어서, 이 파일을 다시 import하면
+// 로더의 존재 이유가 바로 그것인데, "already registered"로 실패하면서
+// 확장을 같이 데리고 내려간다.
 const TrayIndicator = GObject.registerClass({
     GTypeName: `KakaoTalkTrayIndicator_${Date.now()}`,
 },
@@ -200,9 +195,9 @@ class TrayIndicator extends PanelMenu.Button {
             style_class: 'system-status-icon',
         }));
 
-        // Rebuilt every time it opens, because what belongs in it depends on
-        // whether the app is installed and that can change while the shell
-        // is running -- not least by this menu.
+        // 열릴 때마다 다시 만든다. 무엇이 들어갈지가 앱의 설치 여부에
+        // 달렸고, 그건 셸이 도는 중에 바뀔 수 있다. 다른 무엇보다 이 메뉴
+        // 때문에.
         this.menu.connect('open-state-changed', (_menu, open) => {
             if (open)
                 this._rebuild();
@@ -210,28 +205,25 @@ class TrayIndicator extends PanelMenu.Button {
         this._rebuild();
     }
 
-    // This extension is the landing point. It is the part that has to be
-    // installed by hand -- a shell extension lives where no sandboxed app can
-    // put it -- so once it is here it can offer the rest rather than leaving
-    // someone to find a release page.
+    // 이 확장이 랜딩 포인트다. 샌드박스 안의 어떤 앱도 놓을 수 없는 자리에
+    // 살기 때문에 손으로 깔아야 하는 쪽이고, 일단 여기 있으면 나머지를
+    // 권할 수 있다. 사람을 릴리스 페이지 찾으러 보내지 않아도 된다.
     //
-    // Only that, now. Where this used to carry an imitation of KakaoTalk's
-    // tray menu, a right-click asks the app for the real one -- see
-    // vfunc_event -- which is always what the app actually has and does what
-    // it says. Restart and quit moved to the app icon's right-click, which
-    // is where the desktop file puts them.
+    // 지금은 그것뿐이다. 예전에 여기 카카오톡 트레이 메뉴를 흉내 낸 것이
+    // 있었는데, 이제 우클릭은 앱에 진짜를 요청한다. vfunc_event를 보라.
+    // 진짜는 앱이 실제로 갖고 있는 것이고 말한 대로 동작한다. 다시 시작과
+    // 종료는 앱 아이콘의 우클릭으로 옮겼다. desktop 파일이 거기 둔다.
     _rebuild() {
         this.menu.removeAll();
         if (!this._owner.appInstalled())
             this.menu.addAction('카카오톡 설치', () => this._owner.install());
     }
 
-    // Not a button-press-event handler, which is what this was before the
-    // menu existed. PanelMenu.Button toggles its menu from vfunc_event,
-    // which runs during the generic 'event' emission and therefore before
-    // any button-press-event handler gets a say -- so a left click would
-    // open the menu first and there would be no stopping it from out there.
-    // Overriding the vfunc is where the decision can actually be made.
+    // 메뉴가 생기기 전에는 button-press-event 핸들러였다. PanelMenu.Button은
+    // vfunc_event에서 자기 메뉴를 토글하는데, 그건 일반 'event' 발신 중에
+    // 돌아서 어떤 button-press-event 핸들러보다 먼저다. 그래서 좌클릭이
+    // 메뉴를 먼저 열어버리고 바깥에서는 막을 수가 없었다. 결정을 실제로
+    // 내릴 수 있는 자리가 vfunc를 덮어쓰는 여기다.
     vfunc_event(event) {
         const type = event.type();
         if (type !== Clutter.EventType.BUTTON_PRESS &&
@@ -240,13 +232,12 @@ class TrayIndicator extends PanelMenu.Button {
 
         if (type === Clutter.EventType.BUTTON_PRESS &&
             event.get_button() === Clutter.BUTTON_SECONDARY) {
-            // The app's own menu, not one of ours. It is put up by KakaoTalk
-            // at the pointer, which is right here, and it carries whatever
-            // the app has today rather than a copy that would drift.
+            // 우리 것이 아니라 앱 자신의 메뉴다. 카카오톡이 띄우고, 앱이
+            // 오늘 갖고 있는 그대로를 담는다. 복사본이었다면 시간이 지나며
+            // 어긋났을 것이다.
             //
-            // With nothing installed there is no app to ask, and then the
-            // only useful thing is the offer to install one -- which is what
-            // this menu is left holding.
+            // 아무것도 설치되어 있지 않으면 물어볼 앱이 없고, 그때 쓸모
+            // 있는 것은 설치 권유뿐이다. 이 메뉴에 남은 것이 그것이다.
             if (this._owner.appInstalled()) {
                 this.menu.close();
                 this._owner.askMenu();
@@ -275,10 +266,10 @@ export default class KakaoTalkPopup {
     enable() {
         this._pids = new Set();
         this._burst = null;
-        // Everything connected to a window or an actor rather than to the
-        // display, so disable() can let go of it. A handler left behind
-        // outlives the extension that made it: two enables of this file used
-        // to leave two recoveries firing for one closed tray.
+        // display가 아니라 창이나 액터에 건 것들을 모아둔다. disable()이
+        // 놓아줄 수 있도록. 남겨둔 핸들러는 그걸 만든 확장보다 오래 산다.
+        // 이 파일을 두 번 켜면 트레이 하나가 닫힐 때 복구가 두 번 돌곤
+        // 했다.
         this._tray = [];
         this._hidden = new Set();
         this._menuUntil = 0;
@@ -319,14 +310,13 @@ export default class KakaoTalkPopup {
                 continue;
             try {
                 obj.disconnect(id);
-                // And put the tray window back on screen. Leaving it hidden
-                // would leave the app unreachable by anything but this
-                // extension, which is not a state to hand back to the
-                // session.
+                // 그리고 트레이 창을 화면에 돌려놓는다. 숨긴 채로 두면 이
+                // 확장 말고는 앱에 닿을 방법이 없게 되는데, 세션에
+                // 넘겨주기에 좋은 상태가 아니다.
                 if (show)
                     obj.show();
             } catch (e) {
-                // The window went before we did. Nothing to let go of.
+                // 창이 우리보다 먼저 갔다. 놓아줄 것이 없다.
             }
         }
         this._tray = null;
@@ -340,31 +330,29 @@ export default class KakaoTalkPopup {
         this._virtual = null;
     }
 
-    // What exists right now, as opposed to what gets created later. Answers
-    // the question a window-created hook cannot: whether a window is still
-    // there after the app has put itself away.
+    // 앞으로 생길 것이 아니라 지금 있는 것. window-created 훅이 답할 수
+    // 없는 질문에 답한다. 앱이 자기를 치운 뒤에도 그 창이 아직 있는가.
     _dumpWindows() {
         for (const window of global.display.list_all_windows()) {
             const wmClass = window.get_wm_class();
             if (wmClass !== 'kakaotalk.exe' && wmClass !== 'explorer.exe')
                 continue;
-            // Learn the pids from what is already open. Without this the
-            // set stays empty until some window happens to be created, and
-            // the tray cannot be found in the meantime.
+            // 이미 열려 있는 것에서 pid를 배운다. 없으면 어떤 창이 새로
+            // 생길 때까지 집합이 비어 있고, 그동안 트레이를 찾을 수 없다.
             const pid = window.get_pid();
             if (pid > 0)
                 this._pids.add(pid);
-            // Furniture that was already up when this loaded. Without this
-            // a reload leaves whatever is on screen exactly as it was, which
-            // is a poor way to find out whether a change works.
+            // 이 코드가 읽힐 때 이미 떠 있던 장식들. 없으면 다시 읽어도
+            // 화면에 있는 것은 그대로인데, 바꾼 것이 먹히는지 알아보는
+            // 방법으로는 나쁘다.
             this._hideChrome(window);
-            // Windows that were already up never went through _handle, so
-            // they would never have told the indicator when they went.
+            // 이미 떠 있던 창은 _handle을 거치지 않았으므로, 사라질 때
+            // 인디케이터에게 말해줄 방법이 없었다.
             window.connect('unmanaged', () => this._syncIndicatorSoon());
             if (owned_tray_check(wmClass)) {
                 this._watchTray(window);
-                // Windows that were already up when this loaded never went
-                // through _onWindowCreated, so re-type them here too.
+                // 이 코드가 읽힐 때 이미 떠 있던 창은 _onWindowCreated를
+                // 거치지 않았으므로, 타입 변경도 여기서 해준다.
                 this._retype(window);
             }
             if (this._config.log)
@@ -373,25 +361,23 @@ export default class KakaoTalkPopup {
     }
 
 
-    // A new message arrives and its popup takes the keyboard with it, which
-    // in the middle of typing somewhere else is worse than missing the
-    // message -- and worse than it first looked, because the popup carries a
-    // reply box. Keystrokes that land there while the focus is away are not
-    // lost, they are typed into a chat room. Handing the focus back closes
-    // the gap but does not remove it, so this is a mitigation and not a fix;
-    // the fix is not taking the focus at all.
+    // 새 메시지가 오면 팝업이 키보드를 같이 가져간다. 다른 데서 타자를
+    // 치던 중이라면 메시지를 놓치는 것보다 나쁘고, 처음 보이는 것보다 더
+    // 나쁘다. 팝업에 답장 입력칸이 있기 때문이다. 포커스가 넘어간 동안
+    // 거기 떨어진 키는 사라지는 게 아니라 대화방에 입력된다. 포커스를
+    // 돌려주면 그 틈이 좁아지지만 없어지지는 않는다. 이것은 완화책이지
+    // 해결이 아니다. 해결은 애초에 포커스를 가져가지 않는 것이다.
     //
-    // Restoring focus raises this again with the old window as the subject,
-    // which is not a popup, so it records and stops there rather than
-    // bouncing.
+    // 포커스를 돌려주면 이 핸들러가 다시 불리는데, 이번 대상은 팝업이 아닌
+    // 옛 창이다. 그래서 기록하고 멈출 뿐 되튀지 않는다.
     _watchFocus() {
         this._focusId = global.display.connect('notify::focus-window', () => {
             const focused = global.display.focus_window;
             if (!focused)
                 return;
-            // Logged whoever it is, because which window takes the focus is
-            // the question and the answer was assumed rather than looked at.
-            // The rule below only ever recognised the shadow.
+            // 누구든 기록한다. 어느 창이 포커스를 가져가는가가 질문이었고,
+            // 답은 보지 않고 짐작한 것이었다. 아래 규칙은 그림자만
+            // 알아봤다.
             if (this._config.log && this._pids?.has(focused.get_pid()))
                 console.log(`${TAG} focus -> ${this._describe(focused)}`);
             if (!this._config.keep_focus)
@@ -400,8 +386,8 @@ export default class KakaoTalkPopup {
                 this._lastFocused = focused;
                 return;
             }
-            // The menu we just asked for. It is meant to have the focus --
-            // that is what keeps it open -- so leave it alone.
+            // 방금 우리가 요청한 메뉴다. 포커스를 가져야 맞다. 그게 메뉴를
+            // 열어두는 것이다. 그대로 둔다.
             if (this._expectingMenu())
                 return;
             const previous = this._lastFocused;
@@ -411,19 +397,17 @@ export default class KakaoTalkPopup {
         });
     }
 
-    // Matching on POPUP_TITLE alone was not enough and the cost of that was
-    // real. A notification takes the focus with two windows, not one: the
-    // shadow, which carries the name, and an untitled one beside it which is
-    // what the message and its reply box are drawn in. Both were logged
-    // taking the focus, alternating, once per frame of the slide -- and only
-    // the shadow was ever handed back, so the one that ends up holding the
-    // focus is the one nobody was watching. That is the window keystrokes go
-    // into, and they go into a chat room from there.
+    // POPUP_TITLE만으로 매칭하는 것은 부족했고 그 대가가 실제로 있었다.
+    // 알림은 하나가 아니라 두 창으로 포커스를 가져간다. 이름을 들고 있는
+    // 그림자와, 그 옆의 제목 없는 창. 메시지와 답장 입력칸이 그려지는 쪽이
+    // 후자다. 로그에는 둘 다 포커스를 가져가는 것으로 찍혔고, 미끄러지는
+    // 프레임마다 번갈아 나왔다. 그런데 돌려준 것은 그림자뿐이었으니, 결국
+    // 포커스를 들고 있는 쪽은 아무도 안 보던 창이다. 키가 들어가는 창이
+    // 그것이고, 거기서 대화방으로 간다.
     //
-    // So: owned, not the main window, and small. Height is the same
-    // discriminator _findMainWindow uses, for the same reason -- every piece
-    // of a notification measured here is 135 tall or less and the main window
-    // 431 or more.
+    // 그래서 조건은 이렇다. 소유한 창이고, 메인 창이 아니고, 작다.
+    // _findMainWindow가 쓰는 것과 같은 높이 기준이고 이유도 같다. 여기서
+    // 잰 알림 조각은 전부 높이 135 이하이고 메인 창은 431 이상이었다.
     _isPopupWindow(window) {
         if (window.get_wm_class() !== 'kakaotalk.exe')
             return false;
@@ -432,10 +416,9 @@ export default class KakaoTalkPopup {
         return window.get_frame_rect().height < MAIN_MIN_HEIGHT;
     }
 
-    // Something the app draws over its own window rather than a piece of a
-    // notification. Told apart by width, which is the one thing that
-    // separates them cleanly: both are owned by the app and neither has a
-    // title to go on.
+    // 알림의 조각이 아니라 앱이 자기 창 위에 그리는 것. 폭으로 가른다.
+    // 둘을 깨끗이 나누는 유일한 기준이다. 양쪽 다 앱이 소유하고 있고 둘 다
+    // 제목이 없어서 기댈 것이 없다.
     _isOverlay(window) {
         if (!this._config.place_overlays)
             return false;
@@ -446,15 +429,14 @@ export default class KakaoTalkPopup {
                rect.height >= OVERLAY_MIN_HEIGHT && rect.height < MAIN_MIN_HEIGHT;
     }
 
-    // Over the window it belongs to, which the compositor will not do by
-    // itself: a Wayland client cannot place its own toplevel, and this is
-    // one. It arrives wherever the compositor felt like putting it, which
-    // for the date while scrolling was several hundred pixels away from the
-    // conversation it described.
+    // 속한 창 위로 옮긴다. 컴포지터가 알아서 해주지 않는다. Wayland
+    // 클라이언트는 자기 toplevel 위치를 정할 수 없고 이것이 toplevel이다.
+    // 컴포지터가 놓고 싶은 자리에 도착하는데, 스크롤할 때 뜨는 날짜의
+    // 경우 그것이 설명하는 대화창에서 수백 픽셀 떨어진 곳이었다.
     //
-    // The window it belongs to is the one that had the focus until this took
-    // it, which while scrolling a conversation is that conversation. Falling
-    // back to the main window covers the case where nothing was focused.
+    // 속한 창은 이것이 포커스를 가져가기 직전까지 포커스를 갖고 있던
+    // 창이다. 대화를 스크롤하는 중이라면 그 대화창이다. 아무것도 포커스를
+    // 갖고 있지 않았던 경우는 메인 창으로 넘어간다.
     _placeOverlay(window) {
         const over = this._overlayParent();
         if (!over)
@@ -470,10 +452,10 @@ export default class KakaoTalkPopup {
             Math.max(work.x, Math.min(x, work.x + work.width - rect.width)),
             Math.max(work.y, Math.min(y, work.y + work.height - rect.height)));
 
-        // And kept on top, which moving it over the window made necessary.
-        // Out at the side it was in front of nothing; over the conversation
-        // it goes behind it the moment the focus is handed back, which is
-        // something this extension does on purpose and within the second.
+        // 그리고 위에 유지한다. 창 위로 옮긴 것이 이걸 필요하게 만들었다.
+        // 옆에 떨어져 있을 때는 가릴 것이 없었지만, 대화창 위에 놓이면
+        // 포커스를 돌려주는 순간 그 뒤로 간다. 포커스를 돌려주는 것은 이
+        // 확장이 일부러 하는 일이고 1초 안에 일어난다.
         window.make_above();
 
         if (this._config.log)
