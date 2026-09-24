@@ -1,18 +1,17 @@
 #!/bin/bash
-# Fetch the current bundle and install it, for a user who has the shell
-# extension and not the app.
+# 현재 번들을 받아 설치한다. 확장은 있고 앱은 없는 사람을 위한 것.
 #
-# The extension is the landing point: it is the part that has to be installed
-# by hand, since it lives in ~/.local/share/gnome-shell/extensions where a
-# sandboxed app cannot reach, and once it is there it can do the rest. So
-# this is what its indicator calls when nothing is installed yet.
+# 확장이 랜딩 포인트다. 샌드박스 안의 앱이 닿을 수 없는
+# ~/.local/share/gnome-shell/extensions에 살기 때문에 손으로 깔아야 하고,
+# 일단 거기 있으면 나머지는 대신 해줄 수 있다. 아무것도 설치되어 있지
+# 않을 때 인디케이터가 부르는 것이 이것이다.
 #
-# --user, so no root and no password. The runtime comes from flathub, which
-# is where nearly everyone already has it; if the remote is missing this says
-# so rather than failing halfway.
+# --user다. root도 암호도 필요 없다. 런타임은 flathub에서 오는데 거의
+# 모두가 이미 갖고 있다. 리모트가 없으면 중간에 실패하지 않고 그렇다고
+# 말한다.
 #
-#   kakaotalk-install          fetch and install
-#   kakaotalk-install --check  say whether it is installed, and nothing else
+#   kakaotalk-install          받아서 설치
+#   kakaotalk-install --check  설치되어 있는지만 답하고 끝
 set -euo pipefail
 IFS=$'\n\t'
 
@@ -35,8 +34,8 @@ if flatpak info "$APP_ID" >/dev/null 2>&1; then
   exit 0
 fi
 
-# The bundle carries the app and not the runtime, so the runtime has to come
-# from somewhere. A user remote is enough and needs no root.
+# 번들은 앱만 담고 런타임은 안 담는다. 런타임은 어디선가 와야 한다.
+# 사용자 리모트면 충분하고 root가 필요 없다.
 if ! flatpak remotes --columns=name | grep -qx flathub; then
   echo "adding flathub"
   flatpak remote-add --user --if-not-exists flathub \
@@ -47,8 +46,8 @@ mkdir -p "$CACHE"
 readonly BUNDLE="$CACHE/kakaotalk.flatpak"
 
 echo "downloading the bundle"
-# -C -: a half-finished download from a dropped connection resumes rather
-# than starting the seventy megabytes again.
+# -C -: 연결이 끊겨 절반만 받은 것이 있으면 70메가를 처음부터 다시 받지
+# 않고 이어받는다.
 curl -fL --progress-bar -C - -o "$BUNDLE" "$BUNDLE_URL"
 
 echo "installing"

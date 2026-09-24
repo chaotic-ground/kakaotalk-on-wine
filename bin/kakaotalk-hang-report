@@ -1,40 +1,39 @@
 #!/bin/bash
-# Take a report of a wedged KakaoTalk, without killing it.
+# 멈춘 것처럼 보이는 카카오톡의 상태를, 죽이지 않고 뜬다.
 #
-# Written for a window believed to be hung, which was not hung. Keeping it
-# because the answer came out of running it, and the next thing that looks
-# like a hang deserves the same treatment before anyone theorises.
+# 멈췄다고 여겨진 창 때문에 썼고, 그 창은 멈춘 게 아니었다. 답이 이걸
+# 돌려서 나왔기 때문에 남겨둔다. 다음에 멈춤처럼 보이는 것이 있으면 누가
+# 이론을 세우기 전에 같은 대접을 받을 자격이 있다.
 #
-# What it showed: every thread waiting, none holding anything, and a thread
-# topology identical to a healthy instance taken minutes earlier. That ruled
-# out the reading the symptom invited and sent the search to kakaotalk-trace,
-# which found the window was being restored and simply never raised.
+# 보여준 것: 모든 스레드가 기다리는 중이고, 아무것도 붙잡고 있지 않고,
+# 몇 분 전에 뜬 멀쩡한 인스턴스와 스레드 구성이 같았다. 증상이 유도하던
+# 해석을 지웠고, 탐색을 kakaotalk-trace로 보냈다. 거기서 창이 복원되고는
+# 있는데 올라오지 않을 뿐이라는 것이 나왔다.
 #
-# eu-stack rather than winedbg: winedbg was tried once, on a live instance,
-# and the app was gone a moment later, taking the reproduction with it.
-# eu-stack attaches with ptrace, walks the threads and detaches. It reads
-# native frames, so Wine's own machinery shows up by name and the app's PE
-# code as bare addresses, which is enough to tell a thread waiting on the
-# wineserver from one wedged somewhere in win32u.
+# winedbg가 아니라 eu-stack이다. winedbg는 살아있는 인스턴스에 한 번
+# 써봤고, 잠시 뒤 앱이 사라지면서 재현도 같이 가져갔다. eu-stack은
+# ptrace로 붙고, 스레드를 훑고, 떨어진다. 네이티브 프레임을 읽으므로
+# Wine 자신의 기계는 이름으로 나오고 앱의 PE 코드는 맨 주소로 나온다.
+# wineserver를 기다리는 스레드와 win32u 어딘가에 박힌 스레드를 구별하기에는
+# 충분하다.
 #
-# Run it while the window is misbehaving. Afterwards is no use, and a report
-# from a healthy instance is worth taking too -- the comparison is what made
-# the first one mean anything.
+# 창이 이상한 동안 돌려라. 나중은 소용없다. 멀쩡한 인스턴스에서도 한 번
+# 떠두면 좋다. 첫 번째 보고서에 뜻을 준 것이 그 비교였다.
 #
-#   kakaotalk-hang-report [output-file]
+#   kakaotalk-hang-report [출력파일]
 set -euo pipefail
 IFS=$'\n\t'
 
 readonly OUT=${1:-$HOME/kakaotalk-hang-$(date +%Y%m%d-%H%M%S).txt}
 
-# Rewrite each bare address in eu-stack's output as module+offset, read off
-# the process's own memory map. The offset is from the module's lowest
-# mapping, which is what addr2line wants if anyone goes further.
+# eu-stack 출력의 맨 주소를 프로세스 자신의 메모리 맵에서 읽어 모듈+오프셋
+# 으로 바꿔 쓴다. 오프셋은 그 모듈의 가장 낮은 매핑에서부터인데, 누군가 더
+# 파고들 때 addr2line이 원하는 값이다.
 #
-# -c rather than a heredoc on stdin, which is where the backtrace arrives:
-# `python3 -` reads the program from stdin too, so the heredoc won that
-# argument and the data never got in. It failed silently, with a zero exit
-# and an empty section.
+# stdin 히어독이 아니라 -c인 이유는, 백트레이스가 stdin으로 오기 때문이다.
+# `python3 -`는 프로그램도 stdin에서 읽으므로 히어독이 그 자리를 차지하고
+# 데이터는 들어오지 못한다. 조용히 실패했다. 종료 코드는 0이고 그 구역은
+# 비어 있었다.
 resolve_addresses() {
   python3 -c '
 import re, sys
@@ -54,8 +53,8 @@ try:
             spans.append((low, high, path))
             bases[path] = min(bases.get(path, low), low)
 except OSError:
-    # The process can go while this runs, which is not worth failing over --
-    # the addresses are still there, just unlabelled.
+    # 이게 도는 동안 프로세스가 사라질 수 있는데, 그걸로 실패할 일은
+    # 아니다. 주소는 그대로 있고 이름표만 없을 뿐이다.
     pass
 
 def label(match):
@@ -82,8 +81,8 @@ fi
   echo "# KakaoTalk hang report, $(date -Is), pid $pid"
   echo
   echo "## Threads, as the kernel sees them"
-  # State and wchan per thread. A stuck UI thread that is waiting on
-  # something names what it is waiting on here; one spinning does not.
+  # 스레드별 상태와 wchan. 무언가를 기다리다 멈춘 UI 스레드는 여기서 무엇을
+  # 기다리는지 이름을 댄다. 도는 중인 스레드는 대지 않는다.
   printf '%-8s %-6s %-24s %s\n' TID STATE WCHAN NAME
   for task in /proc/"$pid"/task/*; do
     tid=${task##*/}
@@ -96,38 +95,37 @@ fi
 
   echo
   echo "## Backtraces"
-  # -p walks every thread of the process. It stops them briefly and lets
-  # them go again, which is the whole reason this is not winedbg.
+  # -p는 프로세스의 모든 스레드를 훑는다. 잠깐 세웠다가 다시 보내준다.
+  # 이것이 winedbg가 아닌 이유 전부다.
   #
-  # Through the resolver, because nothing here carries symbols: the flatpak's
-  # Wine is stripped and KakaoTalk was never going to ship any, so eu-stack
-  # prints sixty-odd bare addresses and they say nothing at all. Module plus
-  # offset does say something -- whether the stuck thread is inside ntdll
-  # waiting on the wineserver, inside win32u or the display driver, or in
-  # KakaoTalk's own code -- and that is the first fork in the road.
+  # 해석기를 거치는 이유는 여기 심볼이 하나도 없기 때문이다. flatpak의
+  # Wine은 strip되어 있고 카카오톡은 애초에 심볼을 배포할 리가 없다.
+  # eu-stack은 맨 주소 예순 몇 개를 찍고, 그것들은 아무 말도 하지 않는다.
+  # 모듈+오프셋은 말을 한다. 멈춘 스레드가 wineserver를 기다리는 ntdll
+  # 안인지, win32u나 디스플레이 드라이버 안인지, 카카오톡 자신의 코드
+  # 안인지. 그게 갈림길의 첫 번째다.
   #
-  # The status is ignored on purpose. eu-stack exits non-zero because it
-  # cannot find DWARF for a stripped Wine, which is exactly the case this
-  # runs in and says nothing about whether the walk succeeded -- the frames
-  # come out regardless. Left alone it takes the whole report with it, and
-  # the sections below never run.
+  # 종료 상태를 일부러 무시한다. eu-stack은 strip된 Wine의 DWARF를 못
+  # 찾아서 0이 아닌 값으로 끝나는데, 그게 바로 이 스크립트가 도는 상황이고
+  # 훑기가 성공했는지에 대해서는 아무 말도 하지 않는다. 프레임은 어쨌든
+  # 나온다. 놔두면 보고서 전체를 데리고 가고, 아래 구역들은 아예 돌지
+  # 않는다.
   eu-stack -p "$pid" 2>&1 | resolve_addresses "$pid" || true
 
   echo
   echo "## Windows, if the X11 driver is in use"
-  # Under winewayland there is no X window to ask about and this says so.
-  # Under winex11 the geometry is worth having: a window at a plausible size
-  # and position rules out the simplest explanations, and that is exactly
-  # what it turned out to be.
+  # winewayland에서는 물어볼 X 창이 없고 그렇다고 말한다. winex11에서는
+  # 기하가 볼 만하다. 크기와 위치가 그럴듯한 창은 가장 단순한 설명들을
+  # 지우는데, 실제로 그 경우였다.
   if command -v xdotool >/dev/null && [[ -n ${DISPLAY:-} ]]; then
     for w in $(xdotool search --class -- kakaotalk 2>/dev/null); do
       name=$(xdotool getwindowname "$w" 2>/dev/null || true)
       geom=$(xdotool getwindowgeometry --shell "$w" 2>/dev/null | tr '\n' ' ' || true)
-      [[ $geom == *WIDTH=1\ HEIGHT=1* ]] && continue  # message-only windows
+      [[ $geom == *WIDTH=1\ HEIGHT=1* ]] && continue  # 메시지 전용 창
       echo "$w [$name] $geom"
     done
   else
-    echo "(no DISPLAY or no xdotool -- winewayland, or nothing to ask)"
+    echo "(DISPLAY도 xdotool도 없음. winewayland이거나 물어볼 것이 없음)"
   fi
 } >"$OUT" 2>&1
 

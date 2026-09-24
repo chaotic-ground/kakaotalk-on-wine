@@ -1,98 +1,90 @@
 #!/bin/bash
-# Start, quit or restart KakaoTalk from outside its sandbox.
+# 샌드박스 밖에서 카카오톡을 시작하고, 끄고, 다시 시작한다.
 #
-#   --start    start it, unless it is already running
-#   --quit     stop it, and insist if asking does not work
-#   --recover  restart it, but only if it is still running
-#   (nothing)  stop it and start it again
+#   --start    이미 돌고 있지 않으면 시작
+#   --quit     끄고, 물어서 안 되면 고집부린다
+#   --recover  아직 돌고 있을 때만 다시 시작
+#   (없음)     끄고 다시 시작
 #
-# The flatpak's own launcher does most of this from the inside and is the
-# better place for it: `kakaotalk --quit`, `--restart`, `--show`. What cannot
-# happen in there is insisting -- each flatpak instance has its own PID
-# namespace, so nothing inside one can signal a client running in another,
-# and an app that treats WM_CLOSE as "hide to the tray" has to be insisted
-# with. That is what this is for.
+# 이 중 대부분은 flatpak 런처가 안에서 더 잘 한다. `kakaotalk --quit`,
+# `--restart`, `--show`. 안에서 할 수 없는 것이 고집부리기다. 인스턴스마다
+# PID 네임스페이스가 따로라 안에서는 밖의 클라이언트에 신호를 보낼 수 없고,
+# WM_CLOSE를 "트레이로 숨기기"로 받아들이는 앱은 누군가 고집을 부려야 한다.
+# 이 스크립트는 그것 때문에 있다.
 #
-# The GNOME extension calls it for --recover, and the desktop entry's guard
-# is the other reason it exists: launching the app a second time while it is
-# running does not raise the window, it kills the app. A second client starts
-# in the same prefix, KakaoTalk is single-instance, and both ends of that
-# argument lose.
+# GNOME 확장이 --recover로 부르고, desktop 항목의 가드가 나머지 이유다.
+# 돌고 있는 앱을 한 번 더 실행하면 창이 올라오는 게 아니라 앱이 죽는다.
+# 같은 프리픽스에 두 번째 클라이언트가 뜨고, 카카오톡은 단일 인스턴스라
+# 양쪽 다 진다.
 set -euo pipefail
 IFS=$'\n\t'
 
 readonly APP_ID=io.github.chaotic_ground.KakaoTalk
 
-# The file the flatpak's launcher watches. It is under ~/.var/app, which is
-# the host's own filesystem, so writing it from out here costs nothing and
-# starts nothing.
+# 이 스크립트가 앱을 끄는 동안 세워두는 표시. --recover가 본다.
 #
-# Which is the point: `flatpak run <app> --quit` would do the same thing, but
-# only after starting a second instance, and a second instance is exactly
-# what must not happen while the client is up. Each one gets its own PID
-# namespace, and a wine process that looks at another process across that
-# boundary takes the whole session down with it. See serve_control in
-# flatpak/kakaotalk.
-# Set while this script is stopping the app, and looked at by --recover.
+# 확장은 트레이 창이 닫히는 것으로 앱이 고립됐다고 판단하는데, 정상적인
+# 종료도 그 창을 닫는다. 밖에서 보면 구별이 안 된다. 예전에는 확장 자신의
+# 메뉴가 종료를 했고 스스로 물러섰지만, 이제 종료는 여기서 확장이 안 보는
+# 곳에서 일어난다. 그래서 표시도 여기 있어야 한다.
 #
-# Closing the tray window is how the extension notices the app has been
-# stranded, and a stop closes it too -- so a stop looks exactly like the
-# accident it is meant to recover from. It used to be the extension's own
-# menu doing the stopping, and it stood itself down; now the stopping happens
-# here and out of its sight, so the marker has to be here as well.
-#
-# Under $XDG_RUNTIME_DIR, which is cleared between logins, so a marker left
-# by something that died cannot outlive the session it belonged to.
+# $XDG_RUNTIME_DIR 아래에 둔다. 로그인 사이에 비워지므로, 죽은 무언가가
+# 남긴 표시가 자기 세션보다 오래 살아남지 못한다.
 readonly QUITTING=${XDG_RUNTIME_DIR:-/tmp}/kakaotalk-quitting
 
+# flatpak 런처가 지켜보는 파일. ~/.var/app 아래, 호스트 자신의 파일
+# 시스템이라 밖에서 쓰는 데 아무 비용이 없고 아무것도 시작하지 않는다.
+#
+# 그게 핵심이다. `flatpak run <app> --quit`도 같은 일을 하지만 두 번째
+# 인스턴스를 띄운 다음에 한다. 클라이언트가 떠 있는 동안 절대 일어나면 안
+# 되는 것이 바로 그 두 번째 인스턴스다. 인스턴스마다 PID 네임스페이스가
+# 따로라, 그 경계를 넘어 다른 프로세스를 들여다보는 wine 프로세스는 세션
+# 전체를 데리고 내려간다. flatpak/kakaotalk의 serve_control을 보라.
 ask_app() {
   local control=$HOME/.var/app/$APP_ID/data/control
   [[ -d ${control%/*} ]] || return 1
   printf '%s\n' "$1" >"$control"
 }
 
-# Enough of the prefix path to tell this install's processes from anyone
-# else's Wine.
+# 이 설치의 프로세스를 남의 Wine과 구별할 만큼의 프리픽스 경로.
 readonly PREFIX_HINT=$APP_ID
 
-# pgrep counts a zombie as running. KakaoTalk leaves them behind whenever its
-# launcher is killed rather than allowed to reap, and a zombie holds nothing
-# but a pid slot -- so treating one as a live process means waiting twenty
-# seconds for something already gone, and reading "still running" off a
-# corpse.
+# pgrep은 좀비를 돌고 있는 것으로 센다. 카카오톡은 런처가 거두지 못하고
+# 죽을 때마다 좀비를 남기는데, 좀비는 pid 자리 말고 아무것도 들고 있지
+# 않다. 그걸 살아있는 프로세스로 치면 이미 없는 것을 20초 기다리게 되고,
+# 시체를 보고 "아직 돌고 있음"을 읽게 된다.
 #
-# The brackets are not decoration. ps and grep in a pipeline start together,
-# so ps can list the grep itself, and a plain 'KakaoTalk\.exe' has that
-# process's own argv to match against -- it reports the app running whenever
-# it loses that race. Which is worse than a wrong answer here: --start reads
-# it and quietly does nothing, so the app never launches and nothing says
-# why. '[K]akaoTalk\.exe' is the same pattern and does not appear in the argv
-# of the command carrying it.
+# 대괄호는 장식이 아니다. 파이프라인의 ps와 grep은 같이 시작하므로 ps가
+# grep 자신을 목록에 넣을 수 있고, 그냥 'KakaoTalk\.exe'라고 쓰면 그
+# 프로세스의 argv가 매칭 대상이 된다. 경쟁에서 지면 앱이 돌고 있다고
+# 보고한다. 여기서는 틀린 답보다 나쁜데, --start가 그걸 읽고 조용히
+# 아무것도 안 해서 앱이 뜨지 않고 이유도 말하지 않는다.
+# '[K]akaoTalk\.exe'는 같은 패턴이면서 자기를 담은 명령의 argv에는 나타나지
+# 않는다.
 running() {
-  # shellcheck disable=SC2009  # pgrep is what cannot tell a zombie apart
+  # shellcheck disable=SC2009  # 좀비를 구별하지 못하는 쪽이 pgrep이다
   ps -eo stat=,args= | grep -a '[K]akaoTalk\.exe' | grep -qav '^Z'
 }
 
-# A launch takes the better part of a minute, and for most of it there is no
-# window and no KakaoTalk.exe to find -- only the launcher, working. Someone
-# watching nothing happen clicks again, and the second client kills the first
-# and itself with it, so the wait is not merely wasted, it undoes the launch
-# that was already on its way.
-# Measured, so that the number means something: a start takes about nine
-# seconds from a warm prefix. A launcher older than this is not working, it
-# is left over, and treating one as a launch in progress blocks every future
-# start for good.
+# 실행에는 1분 가까이 걸리고, 그 대부분 동안 창도 KakaoTalk.exe도 없다.
+# 일하고 있는 런처만 있다. 아무 일도 안 일어나는 걸 보던 사람이 다시
+# 누르면 두 번째 클라이언트가 첫 번째와 자기를 같이 죽인다. 기다림이 헛된
+# 정도가 아니라, 이미 진행 중이던 실행을 되돌린다.
+#
+# 숫자에 뜻이 있도록 재봤다. 따뜻한 프리픽스에서 9초쯤 걸린다. 이보다
+# 오래된 런처는 일하는 중이 아니라 남은 것이고, 그걸 진행 중인 실행으로
+# 치면 앞으로의 모든 실행이 영영 막힌다.
 readonly LAUNCH_SECONDS=60
 
-# $1 is a comparison against the launcher's age in seconds, as awk sees it.
+# $1은 awk가 보는 런처의 나이(초)에 대한 비교.
 #
-# The pattern arrives in two halves and is joined in BEGIN for the same reason
-# running() spells its name with brackets: ps lists the awk too, and an awk
-# invoked with the whole string on its command line matches itself. It would
-# then always be a launcher under a minute old, starting() would always be
-# true, and --start would never start anything again.
+# 패턴이 두 조각으로 와서 BEGIN에서 합쳐지는 이유는 running()이 이름을
+# 대괄호로 쓰는 것과 같다. ps는 awk도 목록에 넣고, 전체 문자열을 명령줄에
+# 달고 실행된 awk는 자기를 매칭한다. 그러면 언제나 1분 미만의 런처가 있는
+# 셈이 되어 starting()이 항상 참이고, --start는 다시는 아무것도 시작하지
+# 않는다.
 launcher_pids() {
-  # shellcheck disable=SC2009  # matching on the full command line, not a name
+  # shellcheck disable=SC2009  # 이름이 아니라 명령줄 전체로 매칭한다
   ps -eo pid=,etimes=,args= |
     awk -v head='flatpak run' -v tail=" $APP_ID" \
       -v limit="$LAUNCH_SECONDS" \
@@ -105,34 +97,34 @@ starting() {
   [[ -n $(launcher_pids young) ]]
 }
 
-# A launcher with no app under it and no youth to excuse it. Left alone it
-# keeps starting() true for good, and every later start is refused.
+# 밑에 앱도 없고 젊지도 않은 런처. 놔두면 starting()을 영영 참으로 만들고
+# 이후의 모든 실행이 거부된다.
 reap_stale_launchers() {
   running && return 0
   local stale
   stale=$(launcher_pids old)
   [[ -z $stale ]] && return 0
-  # -9, because the bwrap wrapper flatpak puts around these sits through a
-  # plain TERM. There is no app underneath to shut down gracefully -- that is
-  # what makes it stale -- so there is nothing to be careful of.
+  # -9인 이유는 flatpak이 이것들을 감싸는 bwrap이 평범한 TERM을 그냥
+  # 견디기 때문이다. 밑에 얌전히 끝낼 앱도 없다. 없다는 것이 이것을
+  # 낡은 것으로 만든 이유다.
   echo "$stale" | xargs -r kill -9 2>/dev/null || true
   sleep 1
 }
 
-# explorer.exe is a separate process and does not go when the client does, so
-# every start and stop used to leave one behind. Each keeps drawing a tray
-# window, and they stack up at the same corner of the screen -- four of them
-# after a day of testing, two still drawing trays with no client under them.
+# explorer.exe는 별도 프로세스라 클라이언트가 갈 때 같이 가지 않는다.
+# 그래서 시작하고 끌 때마다 하나씩 남았다. 각각이 트레이 창을 계속 그리고,
+# 화면 같은 구석에 쌓인다. 하루 시험하고 네 개가 됐고, 그중 둘은 밑에
+# 클라이언트도 없이 트레이를 그리고 있었다.
 #
-# That is worse than clutter. The indicator raises whichever tray it finds
-# first and puts the pointer on it, so a click can land on a tray belonging
-# to an instance that is gone; mutter pings it, hears nothing, and puts up
-# "explorer.exe is not responding" over a desktop where nothing is wrong.
+# 지저분한 것보다 나쁘다. 인디케이터는 먼저 찾은 트레이를 올리고 그 위에
+# 포인터를 놓으므로, 이미 사라진 인스턴스의 트레이에 클릭이 떨어질 수
+# 있다. mutter가 핑을 보내고 답을 못 듣고, 아무 문제 없는 바탕화면 위에
+# "explorer.exe가 응답하지 않습니다"를 띄운다.
 #
-# Scoped by the prefix in the process's own environment rather than by name,
-# so a tray belonging to some other Wine prefix is left alone.
+# 이름이 아니라 프로세스 자신의 환경에 든 프리픽스로 범위를 잡는다. 다른
+# Wine 프리픽스의 트레이는 건드리지 않는다.
 reap_tray() {
-  # shellcheck disable=SC2009  # matching on the full command line, not a name
+  # shellcheck disable=SC2009  # 이름이 아니라 명령줄 전체로 매칭한다
   for pid in $(ps -eo pid=,args= | grep -a '[e]xplorer\.exe' | awk '{print $1}'); do
     local env_file=/proc/$pid/environ
     [[ -r $env_file ]] || continue
@@ -146,8 +138,8 @@ launch() {
   exec flatpak run "$APP_ID"
 }
 
-# The marker is set around the whole of it rather than by a RETURN trap,
-# which in bash fires by rules subtle enough to be worth not relying on.
+# 표시를 RETURN 트랩이 아니라 전체를 감싸서 세운다. bash의 RETURN 트랩은
+# 규칙이 미묘해서 기대지 않는 편이 낫다.
 stop() {
   local rc
   : >"$QUITTING"
@@ -158,43 +150,42 @@ stop() {
 }
 
 stop_now() {
-  # The tray outlives the client. explorer.exe is its own process and nothing
-  # ends it when KakaoTalk goes, so a --quit that finds the app already gone
-  # still has leftovers to clear -- and leaving them is what stacks trays up
-  # at the corner of the screen for the indicator to poke at.
+  # 트레이는 클라이언트보다 오래 산다. explorer.exe는 별도 프로세스이고
+  # 카카오톡이 갈 때 아무도 그걸 끝내지 않는다. 앱이 이미 없는 것을 발견한
+  # --quit에게도 치울 것이 남아있고, 놔두는 것이 인디케이터가 찌를 트레이를
+  # 화면 구석에 쌓는 일이다.
   if ! running; then
     reap_tray
     return 0
   fi
 
-  # Ask before insisting. taskkill without /f sends WM_CLOSE, which is what a
-  # Windows app expects and what gives KakaoTalk the chance to write its
-  # session out. Killing the process outright does not, and a login that has
-  # to be typed again is the visible cost of that.
+  # 고집부리기 전에 묻는다. /f 없는 taskkill은 WM_CLOSE를 보내는데, 윈도우
+  # 앱이 기대하는 것이고 카카오톡이 세션을 기록할 기회를 준다. 프로세스를
+  # 그냥 죽이면 그 기회가 없고, 다시 쳐야 하는 로그인이 그 값이다.
   #
-  # The asking happens inside the sandbox, by way of ask_app, which never
-  # starts one; the insisting below happens out here, and has to. A flatpak
-  # instance has its own PID namespace, so nothing started inside one can
-  # signal a client running in another, wineserver -k included, which works
-  # by pid.
+  # 묻는 것은 샌드박스 안에서 ask_app을 거쳐 일어나고 인스턴스를 새로
+  # 띄우지 않는다. 아래의 고집은 밖에서 일어나고, 그래야만 한다. flatpak
+  # 인스턴스는 자기 PID 네임스페이스를 갖고 있어서 안에서 시작한 것은 다른
+  # 인스턴스의 클라이언트에 신호를 보낼 수 없다. pid로 동작하는
+  # wineserver -k도 마찬가지다.
   ask_app quit || true
 
   for _ in {1..15}; do
     if ! running; then
-      # It went when asked. The tray did not: explorer.exe is its own
-      # process and outlives the client either way, so the reaping belongs
-      # after every path out of here, not only after the killing one.
+      # 물었더니 갔다. 트레이는 안 갔다. explorer.exe는 어느 쪽이든
+      # 클라이언트보다 오래 살아남으므로, 거두는 일은 죽이는 경로 뒤가
+      # 아니라 여기서 나가는 모든 경로 뒤에 있어야 한다.
       reap_tray
       return 0
     fi
     sleep 1
   done
 
-  # It did not go. Insist.
+  # 안 갔다. 고집부린다.
   pkill -f 'KakaoTalk\.exe' || true
   reap_tray
-  # Wait for the prefix to go quiet. A new instance started while the old
-  # wineserver is still winding down tends to exit without a window.
+  # 프리픽스가 조용해지기를 기다린다. 옛 wineserver가 아직 정리 중일 때
+  # 새 인스턴스를 띄우면 창 없이 끝나는 경향이 있다.
   for _ in {1..20}; do
     running || break
     sleep 1
@@ -205,8 +196,8 @@ case ${1-} in
   --start)
     reap_stale_launchers
     if running || starting; then
-      # Up, or on its way. Doing nothing is not much, but it is better than
-      # the alternative, which is killing it.
+      # 떠 있거나 오는 중이다. 아무것도 안 하는 게 대단하진 않지만,
+      # 대안인 "죽이기"보다는 낫다.
       exit 0
     fi
     launch
@@ -215,26 +206,26 @@ case ${1-} in
     stop
     ;;
   --recover)
-    # Called when the tray window goes away. Closing that window strands the
-    # app: KakaoTalk hides rather than minimises, so with no tray there is
-    # nothing left that can ask it to come back, and no window to ask with.
+    # 트레이 창이 사라질 때 불린다. 그 창을 닫으면 앱이 고립된다.
+    # 카카오톡은 최소화가 아니라 숨기기를 하므로, 트레이가 없으면 돌아오라고
+    # 할 수 있는 것도, 그 말을 걸 창도 남지 않는다.
     #
-    # The wait is to tell that apart from an ordinary quit, where the tray
-    # window also disappears -- a moment later the process is gone too, and
-    # then there is nothing to recover and resurrecting it would be wrong.
+    # 기다리는 것은 평범한 종료와 구별하기 위해서다. 종료할 때도 트레이 창은
+    # 사라지는데, 잠시 뒤 프로세스도 사라진다. 그러면 복구할 것이 없고
+    # 되살리는 것이 오히려 틀렸다.
     sleep 3
     running || exit 0
-    # A stop in progress, which closes the tray window on its way and looks
-    # from outside exactly like the thing worth recovering from. Starting the
-    # app again here would race the stop and leave both of them dead.
+    # 종료가 진행 중이다. 가는 길에 트레이 창을 닫으므로 밖에서 보면 복구할
+    # 만한 사고와 똑같이 보인다. 여기서 앱을 다시 띄우면 종료와 경쟁해서
+    # 둘 다 죽는다.
     [[ -f $QUITTING ]] && exit 0
     exec "$0"
     ;;
   "")
     stop
-    # Wine's record of the monitors goes stale when a display comes or goes,
-    # and a stale one is what throws the app's own popups across the screen.
-    # Nothing to do here: the launcher drops that key on every start.
+    # 디스플레이가 붙거나 빠지면 Wine의 모니터 기록이 낡는데, 낡은 기록이
+    # 앱의 팝업을 화면 아무 데나 던지는 원인이다. 여기서 할 일은 없다.
+    # 런처가 매번 시작할 때 그 키를 지운다.
     launch
     ;;
   *)

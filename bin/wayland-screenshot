@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
-"""Take a screenshot on a Wayland session, through the desktop portal.
+"""Wayland 세션에서 데스크톱 포털로 화면을 캡처한다.
 
-GNOME will not let a program capture the screen behind the user's back. The
-X11 route only ever sees XWayland clients, `org.gnome.Shell.Screenshot` over
-D-Bus answers AccessDenied, and there is no wlr-screencopy on GNOME. The
-portal is the one way in, and it asks the user first -- which is the point of
-it, not a defect.
+GNOME은 사용자 모르게 화면을 찍게 두지 않는다. X11 경로는 XWayland
+클라이언트만 보고, D-Bus의 `org.gnome.Shell.Screenshot`은 AccessDenied로
+답하고, GNOME에는 wlr-screencopy가 없다. 포털이 유일한 길이고, 먼저
+사용자에게 묻는다. 그게 결함이 아니라 요점이다.
 
-The reply does not come back from the call. The portal returns a handle and
-then emits Response on it once the user has answered, so this waits on that
-signal.
+답은 호출에서 돌아오지 않는다. 포털은 핸들을 돌려주고, 사용자가 답하면
+그 핸들 위로 Response를 쏜다. 그래서 그 시그널을 기다린다.
 
-Usage: wayland-screenshot [-i] [OUTPUT]
-  -i   let the user pick an area or window rather than grabbing the screen
+사용법: wayland-screenshot [-i] [출력파일]
+  -i   화면 전체가 아니라 영역이나 창을 사용자가 고르게 한다
 """
 import sys
 import gi
@@ -31,8 +29,8 @@ def main():
     dest = args[0] if args else "screenshot.png"
 
     bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-    # The portal derives the request's object path from our bus name, so it
-    # can be watched before the call is even made.
+    # 포털은 요청의 객체 경로를 우리 버스 이름에서 만들어낸다. 그래서
+    # 호출하기도 전에 지켜볼 수 있다.
     sender = bus.get_unique_name()[1:].replace(".", "_")
     request_path = f"{PORTAL_PATH}/request/{sender}/{TOKEN}"
 
@@ -58,7 +56,7 @@ def main():
         GLib.Variant("(sa{sv})", ("", options)), None,
         Gio.DBusCallFlags.NONE, -1, None)
 
-    # No timeout: the dialog waits for a person.
+    # 타임아웃 없음. 대화상자는 사람을 기다린다.
     loop.run()
 
     if result.get("code") != 0:

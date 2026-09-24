@@ -1,33 +1,31 @@
 #!/bin/bash
-# Run KakaoTalk with Wine's message tracing on, keeping the last of it.
+# Wine의 메시지 추적을 켠 채로 카카오톡을 실행하고, 마지막 부분만 남긴다.
 #
-# Written to chase a window that would not come back after the chat list was
-# closed and a message arrived, and it is what answered the question. The
-# app takes the tray click, posts itself a WM_COMMAND, calls ShowWindow, and
-# set_foreground_window succeeds -- none of which reaches the screen, because
-# a Wayland client cannot raise itself. Nothing was wrong with the app or
-# with Wine; the window was behind everything, drawn correctly, waiting for a
-# compositor to raise it.
+# 대화 목록을 닫고 메시지가 왔을 때 창이 돌아오지 않는 것을 쫓으려고
+# 썼고, 답을 준 것이 이것이다. 앱은 트레이 클릭을 받고, 자기에게
+# WM_COMMAND를 보내고, ShowWindow를 부르고, set_foreground_window가
+# 성공한다. 그중 어느 것도 화면에 닿지 않는다. Wayland 클라이언트는 자기
+# 창을 올릴 수 없기 때문이다. 앱도 Wine도 잘못한 것이 없었다. 창은 모든
+# 것 뒤에 제대로 그려진 채로 컴포지터가 올려주기를 기다리고 있었다.
 #
-# Kept for the next question of the same shape, where guessing from the
-# outside had already produced two confident wrong answers.
+# 같은 모양의 다음 질문을 위해 남겨둔다. 밖에서 짐작하는 방식은 이미 확신에
+# 찬 틀린 답을 두 번 내놓았다.
 #
-# No symbols are needed for this, which is the point: the flatpak's Wine is
-# stripped, so a backtrace resolves only to module plus offset while +msg
-# names every message it prints.
+# 심볼이 필요 없다는 것이 요점이다. flatpak의 Wine은 strip되어 있어서
+# 백트레이스는 모듈+오프셋까지만 풀리는데, +msg는 찍는 메시지마다 이름을
+# 말해준다.
 #
-# Usage:
-#   kakaotalk-trace          start traced, and hold the terminal
+# 사용법:
+#   kakaotalk-trace          추적하며 실행하고 터미널을 붙잡는다
 #
-# There is nothing to undo afterwards. The channels are set with --env on the
-# launch, so they last exactly as long as that run.
+# 끝나고 되돌릴 것은 없다. 채널은 실행할 때 --env로 주므로 그 실행 동안만
+# 산다.
 #
-# Leave it running. When the window misbehaves the log is already on disk --
-# rewritten every couple of seconds -- so read it then, and take a
-# kakaotalk-hang-report alongside it.
+# 켜둔 채로 두라. 창이 이상해지면 로그는 이미 디스크에 있다. 2초마다 다시
+# 쓴다. 그때 읽고, kakaotalk-hang-report도 같이 떠라.
 #
-# Set KAKAOTALK_WINEDEBUG for other channels; +win and +event are the
-# neighbours worth reaching for.
+# 다른 채널은 KAKAOTALK_WINEDEBUG로 준다. +win과 +event가 가까운
+# 이웃이다.
 set -euo pipefail
 IFS=$'\n\t'
 
@@ -35,9 +33,8 @@ readonly APP_ID=io.github.chaotic_ground.KakaoTalk
 readonly CHANNELS=${KAKAOTALK_WINEDEBUG:-+timestamp,+msg}
 readonly LOG=${KAKAOTALK_TRACE_LOG:-$HOME/kakaotalk-trace.log}
 
-# Lines kept. +msg is a firehose, so this is a ring rather than the whole
-# stream: what matters is the end of it, and an unbounded log would fill the
-# disk long before anybody read it.
+# 남길 줄 수. +msg는 소방호스라서 전체가 아니라 링으로 받는다. 중요한 것은
+# 끝부분이고, 제한 없는 로그는 누가 읽기 한참 전에 디스크를 채운다.
 readonly KEEP=${KAKAOTALK_TRACE_LINES:-300000}
 
 readonly REPO="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)"
@@ -47,9 +44,9 @@ if [[ -n ${1-} ]]; then
   exit 2
 fi
 
-# Nothing to set and nothing to put back. The manifest pins WINEDEBUG=-all,
-# and --env on the launch overrides it for that run only -- so a traced run
-# leaves nothing behind, which is the whole of what --off used to undo.
+# 설정할 것도 되돌릴 것도 없다. 매니페스트가 WINEDEBUG=-all을 박아두고,
+# 실행할 때 주는 --env가 그 실행에 한해 덮는다. 추적한 실행은 아무것도
+# 남기지 않는다.
 "$REPO/bin/kakaotalk-restart" --quit
 
 echo "WINEDEBUG=$CHANNELS"
@@ -68,9 +65,9 @@ def flush():
     with open(path, "w") as out:
         out.write("".join(ring))
 
-# Rewritten on a timer rather than at the end. The interesting moment is
-# while the window is still hung and someone is looking at it, and a log that
-# only appears once the app is closed is no use for that.
+# 끝날 때가 아니라 타이머로 다시 쓴다. 흥미로운 순간은 창이 아직 멈춰
+# 있고 누군가 그걸 보고 있는 동안이다. 앱을 닫아야 나타나는 로그는 그때
+# 쓸모가 없다.
 signal.signal(signal.SIGUSR1, lambda *_: flush())
 try:
     for line in sys.stdin:
