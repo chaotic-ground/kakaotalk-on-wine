@@ -1,0 +1,98 @@
+---
+name: Bundle
+
+# Build the single-file flatpak and attach it to the release the install
+# script reads, which is releases/latest/download/kakaotalk.flatpak.
+#
+# It is built from io.github.chaotic_ground.KakaoTalk.yml and not from
+# local-manifest.yml: that one exists for iterating against files on a
+# workstation, while this one takes everything from the release assets by URL
+# and checksum, which is what makes a build here possible at all.
+#
+# Which also means this does not build Wine. Wine is a forty-minute job that
+# needs a cross compiler, and it changes only when patches/ does; it is
+# published as its own asset, by hand, and the checksum in the manifest is
+# what ties the two together. See patches/README.md.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'flatpak/**'
+      - 'config/kakaotalk-korean.reg'
+      - '.github/workflows/bundle.yml'
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  # The release the assets live on. Not a rolling "latest" tag of its own:
+  # the manifest names this one in every source URL, so the bundle and the
+  # things it is built from stay together.
+  RELEASE: wine-11.18-emoji
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    # Two thirds of this is the runtime and the SDK coming down from flathub.
+    timeout-minutes: 60
+    permissions:
+      contents: write  # gh release upload
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install flatpak-builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+
+      # Ubuntu 24.04 refuses unprivileged user namespaces to anything without
+      # an AppArmor profile, and everything flatpak does is built on them --
+      # bwrap fails with "No permissions to create new namespace" and the
+      # build stops before it starts.
+      - name: Let bwrap make a namespace
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      # --user throughout, so nothing here needs root and the build matches
+      # the way the app is installed.
+      - name: Add flathub
+        run: |
+          flatpak remote-add --user --if-not-exists flathub \
+            https://dl.flathub.org/repo/flathub.flatpakrepo
+
+      - name: Install the runtime
+        run: |
+          flatpak install --user -y flathub \
+            org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08
+
+      # --disable-cache, and not as a precaution. flatpak-builder will reuse a
+      # module whose source it cannot resolve, or whose file has been replaced
+      # in place, and say nothing -- see patches/README.md. A runner starts
+      # empty so there is nothing to reuse, but a cached runner later would
+      # bring the problem with it.
+      - name: Build
+        working-directory: flatpak
+        run: |
+          flatpak-builder --user --force-clean --disable-cache \
+            --repo=repo build-dir io.github.chaotic_ground.KakaoTalk.yml
+
+      # Checked rather than trusted, for the same reason. The launcher is the
+      # file that changes most often, so it is the one worth looking at.
+      - name: Check what came out
+        working-directory: flatpak
+        run: |
+          diff kakaotalk build-dir/files/bin/kakaotalk
+
+      - name: Bundle
+        working-directory: flatpak
+        run: |
+          flatpak build-bundle repo kakaotalk.flatpak \
+            io.github.chaotic_ground.KakaoTalk
+          ls -l kakaotalk.flatpak
+
+      - name: Attach it to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$RELEASE" flatpak/kakaotalk.flatpak --clobber
