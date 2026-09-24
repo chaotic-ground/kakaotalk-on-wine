@@ -54,7 +54,7 @@ download page; the one every search result hands you is the 32-bit one at
 | Menus, tooltips, dialogs in Korean | works |
 | Emoji | works, **with a patched Wine** (`patches/`); monochrome |
 | The window coming back to the front by itself | **it does not** |
-| Two-finger scroll | **does not reach the app** |
+| Two-finger scroll | works, **with a patched Wine** (`patches/`) |
 | Tray icon right-click menu | **nothing happens** |
 | Alt-tab label | says "Bottles" |
 
@@ -102,9 +102,12 @@ nobody repeats the search:
   the popup's shadow, which Wine draws as a plain white rectangle around the
   message rather than a shadow under it. See `_hideChrome`.
 
-- **Two-finger scroll** is not picked up by Wine's Wayland driver. Confirmed
-  by switching that one registry key: the same prefix under the X11 driver
-  scrolls.
+- **Two-finger scroll** needed a patch, in `patches/`. Wine acts on
+  `wl_pointer.axis_value120`, which is a wheel's event, and left
+  `wl_pointer.axis` an empty function -- and a touchpad has no notches, so a
+  distance is all it sends. Upstream knows:
+  [56043](https://bugs.winehq.org/show_bug.cgi?id=56043) and
+  [57709](https://bugs.winehq.org/show_bug.cgi?id=57709), both open.
 - **The tray menu** produces no window at all when right-clicked, so there is
   nothing misplaced to correct. Left-click, which restores the window, works.
   Also the Wayland driver's doing -- under X11 the tray is a real XEmbed icon

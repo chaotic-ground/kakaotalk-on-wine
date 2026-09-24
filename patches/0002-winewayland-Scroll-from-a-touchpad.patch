@@ -1,0 +1,187 @@
+From: kakaotalk-on-wine
+Subject: [PATCH] winewayland: Scroll from a touchpad
+
+Two-finger scrolling does nothing under the Wayland driver. A wheel mouse
+works, which is the shape of the bug: wine acts on wl_pointer.axis_value120
+and leaves wl_pointer.axis empty, and value120 is the wheel's event. A
+touchpad has no notches, so it sends a distance and nothing else, and that
+distance went into an empty function.
+
+    static void pointer_handle_axis(void *data, struct wl_pointer *wl_pointer,
+                                    uint32_t time, uint32_t axis, wl_fixed_t value)
+    {
+    }
+
+The distance is in the same units as pointer motion, because that is all a
+finger can give, and Windows has nothing but notches. So the notches are
+counted out of the distance: accumulate, emit a whole notch when one is
+worth emitting, and keep the remainder. Rounding the remainder away instead
+would lose most of a slow scroll, which is the one this is for. Ten units to
+a notch, which is what the toolkits settled on for the same conversion.
+
+A wheel must not be counted twice. For wl_pointer version 8 a wheel sends
+axis_value120 *and* axis for the same movement, so taking both would double
+it. axis_source says which device a frame came from and was empty too; it is
+recorded now, and only a finger's frames are taken here.
+
+axis_stop was empty as well and is needed: it is the fingers leaving, and
+the fraction of a notch left over belongs to a gesture that has ended. Kept,
+it would make the next one start slightly ahead of where it was asked to.
+
+The wheel path is unchanged in behaviour, but the input it builds is now
+shared with this one rather than written out twice.
+
+Wine bugs: https://bugs.winehq.org/show_bug.cgi?id=56043
+           https://bugs.winehq.org/show_bug.cgi?id=57709
+---
+--- a/dlls/winewayland.drv/waylanddrv.h
++++ b/dlls/winewayland.drv/waylanddrv.h
+@@ -120,6 +120,16 @@
+     struct wayland_cursor cursor;
+     double accum_x;
+     double accum_y;
++    /* Smooth scrolling, which is all a touchpad sends. See
++     * pointer_handle_axis: the deltas arrive continuously and have to be
++     * gathered into the notches Windows expects. Kept per axis, and reset
++     * when the fingers leave so that half a notch does not carry into the
++     * next gesture. axis_source says which device the frame came from, and
++     * a wheel's frames are left alone because they are already counted by
++     * axis_value120. */
++    uint32_t axis_source;
++    double scroll_x;
++    double scroll_y;
+     pthread_mutex_t mutex;
+ };
+ 
+--- a/dlls/winewayland.drv/wayland_pointer.c
++++ b/dlls/winewayland.drv/wayland_pointer.c
+@@ -270,9 +270,75 @@
+     NtUserSendHardwareInput(hwnd, SEND_HWMSG_RAWINPUT, &input, 0);
+ }
+ 
++/* How far a finger travels for one notch of the wheel.
++ *
++ * The value that arrives here is a distance, in the same units as pointer
++ * motion, because that is what a touchpad has to give: there are no notches
++ * under a finger. Windows has nothing but notches, so they have to be
++ * counted out of the distance, and this is the length of one. Ten is what
++ * the toolkits settled on for the same conversion. */
++#define WAYLAND_SCROLL_STEP 10.0
++
++static void pointer_emit_wheel(HWND hwnd, uint32_t axis, int wheel)
++{
++    INPUT input = {0};
++
++    input.type = INPUT_MOUSE;
++    switch (axis)
++    {
++    case WL_POINTER_AXIS_VERTICAL_SCROLL:
++        input.mi.dwFlags = MOUSEEVENTF_WHEEL;
++        input.mi.mouseData = -wheel;
++        break;
++    case WL_POINTER_AXIS_HORIZONTAL_SCROLL:
++        input.mi.dwFlags = MOUSEEVENTF_HWHEEL;
++        input.mi.mouseData = wheel;
++        break;
++    default: return;
++    }
++    NtUserSendHardwareInput(hwnd, SEND_HWMSG_RAWINPUT, &input, 0);
++}
++
++/* A touchpad scrolls with this and nothing else. A wheel sends it too, but a
++ * wheel also sends axis_value120, which is already handled and would count
++ * the same movement twice -- so only a finger's frames are taken here. */
+ static void pointer_handle_axis(void *data, struct wl_pointer *wl_pointer,
+                                 uint32_t time, uint32_t axis, wl_fixed_t value)
+ {
++    struct wayland_pointer *pointer = &process_wayland.pointer;
++    double *accum, delta;
++    HWND hwnd;
++    int wheel;
++
++    TRACE("axis=%u value=%f source=%u\n", axis, wl_fixed_to_double(value),
++          pointer->axis_source);
++
++    if (pointer->axis_source != WL_POINTER_AXIS_SOURCE_FINGER &&
++        pointer->axis_source != WL_POINTER_AXIS_SOURCE_CONTINUOUS)
++        return;
++
++    switch (axis)
++    {
++    case WL_POINTER_AXIS_VERTICAL_SCROLL: accum = &pointer->scroll_y; break;
++    case WL_POINTER_AXIS_HORIZONTAL_SCROLL: accum = &pointer->scroll_x; break;
++    default: return;
++    }
++
++    if (!(hwnd = wayland_pointer_get_focused_hwnd())) return;
++
++    *accum += wl_fixed_to_double(value);
++    delta = *accum / WAYLAND_SCROLL_STEP;
++    /* Whole notches only, and the remainder stays for the next event.
++     * Rounding it away instead would lose most of a slow scroll, which is
++     * the one this is for. */
++    wheel = (int)delta * WHEEL_DELTA;
++    if (!wheel) return;
++    *accum -= (wheel / WHEEL_DELTA) * WAYLAND_SCROLL_STEP;
++
++    TRACE("hwnd=%p axis=%u value=%f wheel=%d\n",
++          hwnd, axis, wl_fixed_to_double(value), wheel);
++
++    pointer_emit_wheel(hwnd, axis, wheel);
+ }
+ 
+ static void pointer_handle_frame(void *data, struct wl_pointer *wl_pointer)
+@@ -284,39 +350,36 @@
+ static void pointer_handle_axis_source(void *data, struct wl_pointer *wl_pointer,
+                                        uint32_t axis_source)
+ {
++    TRACE("axis_source=%u\n", axis_source);
++    process_wayland.pointer.axis_source = axis_source;
+ }
+ 
++/* The fingers have left. Whatever is left over is the beginning of nothing,
++ * and keeping it would make the next gesture start a fraction of a notch
++ * ahead of where it was asked to. */
+ static void pointer_handle_axis_stop(void *data, struct wl_pointer *wl_pointer,
+                                      uint32_t time, uint32_t axis)
+ {
++    struct wayland_pointer *pointer = &process_wayland.pointer;
++
++    switch (axis)
++    {
++    case WL_POINTER_AXIS_VERTICAL_SCROLL: pointer->scroll_y = 0; break;
++    case WL_POINTER_AXIS_HORIZONTAL_SCROLL: pointer->scroll_x = 0; break;
++    default: break;
++    }
+ }
+ 
+ static void pointer_handle_axis_value120(void *data, struct wl_pointer *wl_pointer,
+                                          uint32_t axis, int32_t value120)
+ {
+-    INPUT input = {0};
+     HWND hwnd;
+ 
+     if (!(hwnd = wayland_pointer_get_focused_hwnd())) return;
+ 
+-    input.type = INPUT_MOUSE;
+-
+-    switch (axis)
+-    {
+-    case WL_POINTER_AXIS_VERTICAL_SCROLL:
+-        input.mi.dwFlags = MOUSEEVENTF_WHEEL;
+-        input.mi.mouseData = -value120;
+-        break;
+-    case WL_POINTER_AXIS_HORIZONTAL_SCROLL:
+-        input.mi.dwFlags = MOUSEEVENTF_HWHEEL;
+-        input.mi.mouseData = value120;
+-        break;
+-    default: break;
+-    }
+-
+     TRACE("hwnd=%p axis=%u value120=%d\n", hwnd, axis, value120);
+ 
+-    NtUserSendHardwareInput(hwnd, SEND_HWMSG_RAWINPUT, &input, 0);
++    pointer_emit_wheel(hwnd, axis, value120);
+ }
+ 
+ static void pointer_handle_axis_discrete(void *data, struct wl_pointer *wl_pointer,

@@ -18,27 +18,46 @@ the DIB driver as a coverage mask that gets painted in the current text
 colour. There is no channel for a glyph that carries its own colours, and
 adding one is a different and much larger job.
 
+## 0002 — a touchpad scrolls
+
+Two-finger scrolling did nothing while a wheel mouse worked, which is the
+shape of it: wine acts on the wheel's event and left the touchpad's an empty
+function. Upstream: [56043](https://bugs.winehq.org/show_bug.cgi?id=56043)
+and [57709](https://bugs.winehq.org/show_bug.cgi?id=57709), both open, both
+UNCONFIRMED.
+
 ## Building it
 
-In a container, so the host keeps no build dependencies. A 64-bit-only build
-takes about twenty minutes on fourteen threads; there is no 32-bit half to
-build because the client is 64-bit.
+In a container, so the host keeps no build dependencies. About forty minutes
+on fourteen threads.
+
+Both architectures, although the client is 64-bit: Kakao ships it inside a
+32-bit NSIS installer, and a Wine with no 32-bit half stops at "failed to
+load syswow64\ntdll.dll". New WoW64 needs a 32-bit PE compiler and no 32-bit
+host libraries, which is why mingw32 is here and nothing else is.
 
 ```sh
 toolbox create -y --container wine-build
 toolbox run -c wine-build sudo dnf builddep -y wine
+toolbox run -c wine-build sudo dnf install -y mingw32-gcc mingw64-gcc
 
 curl -fsSLO https://dl.winehq.org/wine/source/11.x/wine-11.18.tar.xz
 tar -xf wine-11.18.tar.xz
-( cd wine-11.18 && git init -q . && git apply /path/to/patches/0001-*.patch )
+( cd wine-11.18 && git init -q . && git apply /path/to/patches/000*.patch )
 
 toolbox run -c wine-build sh -c '
   cd wine-11.18 && mkdir -p build && cd build &&
-  ../configure --enable-archs=x86_64 --prefix=$HOME/wine-emoji &&
+  ../configure --enable-archs=i386,x86_64 --prefix=$HOME/wine-emoji &&
   make -j$(nproc) && make install'
 ```
 
-Then put it where Bottles looks for runners and point the bottle at it:
+Strip it before packaging. Unstripped it is 1.7GB against 379MB, and the
+debug information is of no use in a binary nobody has the symbols for
+anyway; `x86_64-w64-mingw32-strip` and `i686-w64-mingw32-strip` for the PE
+modules, plain `strip` for the rest.
+
+The flatpak takes it from there -- see `flatpak/` -- or put it where Bottles
+looks for runners and point the bottle at it:
 
 ```sh
 cp -a ~/wine-emoji \
@@ -49,6 +68,20 @@ flatpak run --command=bottles-cli com.usebottles.bottles \
 
 Close the app first. Replacing a runner directory underneath a running
 prefix leaves a zombie and takes the app with it.
+
+**Check that what you built is what is running.** flatpak-builder caches a
+module and will reuse it silently -- a manifest moved to another directory
+makes its relative `path:` sources unresolvable, and the build says nothing
+and succeeds with the old contents. That cost an afternoon of reading traces
+of a patch that had never reached the app. Compare the file:
+
+```sh
+sha256sum ~/wine-emoji/lib/wine/x86_64-unix/winewayland.so
+sha256sum "$(find ~/.local/share/flatpak/app/io.github.chaotic_ground.KakaoTalk \
+  -name winewayland.so)"
+```
+
+`--disable-cache` avoids the problem at the cost of a full rebuild.
 
 The prefix was made by an older Wine, so the first run updates it. That is
 `wineboot -u` and it happens by itself.
