@@ -1,0 +1,267 @@
+#!/bin/bash
+# Set the prefix up if it is not, then run KakaoTalk.
+#
+# This is bin/kakaotalk-bottle with Bottles taken out. Every step it did
+# survives -- the ordering matters and is explained there -- but each one
+# talks to wine directly instead of through bottles-cli, which is shorter in
+# most places and in some cases removes a workaround: nothing has to be
+# staged inside the prefix to get it past a sandbox that cannot see $HOME,
+# because in here $HOME is the app's own data directory.
+#
+# Four things have to be Korean before the installer runs, and each fails
+# quietly and differently when it is missing: the runtime locale, LC_ALL for
+# wine, the Windows UI language in the registry, and a Korean font inside the
+# prefix. KakaoTalk reads its UI language once, while installing, so a client
+# installed against an English prefix stays English for good.
+#
+#   kakaotalk              set up if needed, then run
+#   kakaotalk --reinstall  install the client again over the top
+#   kakaotalk --setup      set up and stop, without running
+#   kakaotalk --quit       ask the running client to close
+set -euo pipefail
+IFS=$'\n\t'
+
+# Not $HOME. Inside the sandbox $HOME is the real path but almost none of it
+# is there, and what is written to it does not survive. The app's own data
+# directory is what persists, and XDG_DATA_HOME points at it.
+readonly PREFIX="${XDG_DATA_HOME:-$HOME/.local/share}/prefix"
+readonly WINE=/app/wine/bin/wine
+readonly SERVER=/app/wine/bin/wineserver
+readonly SHARE=/app/share/kakaotalk
+readonly CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/kakaotalk"
+
+# The 64-bit client. Kakao publishes three Windows builds; this is the one
+# the download page labels 기존버전, and the one every search result hands you
+# instead is the 32-bit build at app-pc.kakaocdn.net/talk/win32/.
+readonly INSTALLER_URL=https://lk.kakaocdn.net/talkpc/talk/win32/x64/KakaoTalk_Setup.exe
+readonly INSTALLER="$CACHE/KakaoTalk_Setup_x64.exe"
+readonly EXE="$PREFIX/drive_c/Program Files/Kakao/KakaoTalk/KakaoTalk.exe"
+
+# Wine does no scaling of its own. 144 = 96 * 1.5; set KAKAOTALK_DPI on a
+# machine that scales differently. The tray icon size hangs off the same
+# number -- see bin/kakaotalk-bottle for why it cannot simply be raised.
+readonly DPI=${KAKAOTALK_DPI:-144}
+readonly GRAPHICS=${WINE_GRAPHICS:-wayland}
+
+export WINEPREFIX="$PREFIX"
+# LOCPATH comes from the manifest, so that the shell running this starts with
+# it. ko_KR.UTF-8 is built into the app because the runtime carries only the
+# host's own language; without it setlocale fails and wine drops back to C
+# without saying so, which is the quiet failure that makes everything else
+# look broken.
+export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-mscoree,mshtml=}"
+export LC_ALL=ko_KR.UTF-8
+
+mode=run
+case ${1-} in
+  --reinstall) mode=reinstall ;;
+  --setup) mode=setup ;;
+  --quit) mode=quit ;;
+  "") ;;
+  *) echo "usage: ${0##*/} [--reinstall|--setup|--quit]" >&2; exit 2 ;;
+esac
+
+step() { echo "==> $*"; }
+
+# Ask before insisting. taskkill without /f sends WM_CLOSE, which is what a
+# Windows app expects and what gives KakaoTalk the chance to write its
+# session out; killing it outright costs a login that has to be typed again.
+if [[ $mode == quit ]]; then
+  # Asking, and only asking. taskkill without /f sends WM_CLOSE, which is
+  # what gives KakaoTalk the chance to write its session out, and it reaches
+  # the running client because it goes through the wineserver's socket in the
+  # shared /tmp rather than by process id.
+  #
+  # Insisting is not this instance's to do. Each flatpak instance has its own
+  # PID namespace, so from in here the running client cannot be seen, let
+  # alone signalled -- wineserver -k included, which works by pid. And
+  # KakaoTalk treats WM_CLOSE as "hide to the tray" rather than as an
+  # instruction to leave, so something does have to insist. That is the
+  # caller's job, from outside: see bin/kakaotalk-restart.
+  timeout 60 "$WINE" taskkill /im KakaoTalk.exe >/dev/null 2>&1 || true
+  exit 0
+fi
+
+# Every wine call is capped. One of them wedging holds the wineserver, and
+# then nothing can start at all.
+wine() { timeout "${WINE_TIMEOUT:-300}" "$WINE" "$@"; }
+
+# reg.exe reads a BOM-less file as CP949 whatever the header claims, so
+# anything with Korean in it has to be UTF-16LE with a BOM. That is why these
+# go through a file rather than through reg.exe's argv.
+import_reg() {
+  local file=$1
+  wine reg import "$(printf 'Z:%s' "${file//\//\\}")" >/dev/null 2>&1
+}
+
+ensure_prefix() {
+  [[ -f $PREFIX/system.reg ]] && return 0
+  step "creating the prefix"
+  mkdir -p "$PREFIX"
+  WINE_TIMEOUT=900 wine wineboot -u >/dev/null 2>&1 || true
+  "$SERVER" -w
+}
+
+install_fonts() {
+  local dest="$PREFIX/drive_c/windows/Fonts"
+  install -d "$dest"
+  install -m644 -t "$dest" "$SHARE"/fonts/*.ttf
+  # Dropping the files in is not enough: wine declined to pick them up by
+  # itself, so name them outright.
+  local key='HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Fonts'
+  wine reg add "$key" /v 'NanumGothic (TrueType)' /d NanumGothic.ttf /t REG_SZ /f >/dev/null 2>&1
+  wine reg add "$key" /v 'NanumGothic Bold (TrueType)' /d NanumGothicBold.ttf /t REG_SZ /f >/dev/null 2>&1
+  wine reg add "$key" /v 'Noto Emoji (TrueType)' /d NotoEmoji-Regular.ttf /t REG_SZ /f >/dev/null 2>&1
+}
+
+apply_korean() {
+  step "setting the Korean UI language"
+  import_reg "$SHARE/kakaotalk-korean.reg"
+}
+
+# KakaoTalk asks for its fonts by Korean face name -- its own skin files name
+# 맑은 고딕 throughout -- so Latin-named substitutions never match and menus
+# and tooltips come out as boxes.
+substitute_korean_fonts() {
+  step "substituting the Korean face names"
+  local staged="$CACHE/korean-fonts.reg"
+  {
+    printf 'Windows Registry Editor Version 5.00\n\n'
+    local key
+    for key in 'HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\FontSubstitutes' \
+               'HKEY_CURRENT_USER\Software\Wine\Fonts\Replacements'; do
+      printf '[%s]\n' "$key"
+      local face
+      for face in "맑은 고딕" "Malgun Gothic" 굴림 굴림체 돋움 돋움체 바탕 바탕체; do
+        printf '"%s"="NanumGothic"\n' "$face"
+      done
+      printf '\n'
+    done
+  } | iconv -f UTF-8 -t UTF-16LE | { printf '\xff\xfe'; cat; } >"$staged"
+  import_reg "$staged"
+  rm -f "$staged"
+}
+
+# The fonts wine draws its own chrome with are named in LOGFONT blobs under
+# WindowMetrics and they all say Tahoma. Substitution cannot reach them --
+# wine ships its own Tahoma, so the face is not missing and nothing stands in
+# -- so the face inside the blob is rewritten instead.
+rename_chrome_fonts() {
+  step "pointing the window metrics fonts at NanumGothic"
+  local staged="$CACHE/window-metrics.reg"
+  python3 - "$PREFIX/user.reg" "$staged" <<'PY'
+import re, struct, sys
+
+src, dest = sys.argv[1], sys.argv[2]
+text = open(src, encoding="utf-8", errors="surrogateescape").read()
+out = ["Windows Registry Editor Version 5.00", "",
+       r"[HKEY_CURRENT_USER\Control Panel\Desktop\WindowMetrics]"]
+
+def read(name):
+    m = re.search(r'"%s"=hex:((?:[0-9a-f,\\\s]+?))\n(?=")' % name, text)
+    if not m:
+        return None
+    return bytearray(int(b, 16) for b in
+                     re.sub(r"[\\\s]", "", m.group(1)).rstrip(",").split(","))
+
+for name in ("CaptionFont", "SmCaptionFont", "MenuFont",
+             "StatusFont", "MessageFont", "IconFont"):
+    blob = read(name)
+    if blob is None:
+        # Wine leaves StatusFont unwritten and falls back to a built-in,
+        # which is how tooltips kept their boxes after the rest were fixed.
+        # MenuFont is the same shape and size, so start from it.
+        blob = read("MenuFont")
+    if blob is None:
+        continue
+    # lfFaceName is the last field of LOGFONTW: 32 UTF-16 code units at
+    # offset 28, null padded.
+    face = "NanumGothic"
+    blob[28:28 + 64] = struct.pack("<32H", *([ord(c) for c in face] + [0] * (32 - len(face))))
+    out.append('"%s"=hex:%s' % (name, ",".join("%02x" % b for b in blob)))
+
+out.append("")
+open(dest, "w").write("\n".join(out))
+PY
+  import_reg "$staged"
+  rm -f "$staged"
+}
+
+# 나눔고딕 and not NanumGothic. A font link is keyed on the family name wine
+# actually uses, and NanumGothic.ttf carries both names with the Korean one
+# primary. Whichever comes second becomes a substitution for the first --
+# create_family does that itself, with nothing in the registry to show for it
+# -- and a link keyed on a substituted name is thrown away with
+# "SystemLink entry for substituted font, ignoring".
+link_emoji_font() {
+  step "linking the emoji fallback"
+  local staged="$CACHE/emoji.reg"
+  python3 - "$staged" <<'PY'
+import sys
+
+def multi_sz(items):
+    data = b"".join(s.encode("utf-16-le") + b"\x00\x00" for s in items) + b"\x00\x00"
+    return ",".join("%02x" % b for b in data)
+
+link = multi_sz(["NotoEmoji-Regular.ttf,Noto Emoji"])
+lines = ["Windows Registry Editor Version 5.00", "",
+         r"[HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\FontLink\SystemLink]"]
+for base in ("나눔고딕", "맑은 고딕", "Malgun Gothic", "Arial", "Tahoma", "System"):
+    lines.append('"%s"=hex(7):%s' % (base, link))
+lines.append("")
+open(sys.argv[1], "w", encoding="utf-16-le").write("﻿" + "\n".join(lines))
+PY
+  import_reg "$staged"
+  rm -f "$staged"
+}
+
+set_driver_and_dpi() {
+  step "pointing wine at the $GRAPHICS driver, at $DPI DPI"
+  wine reg add 'HKEY_CURRENT_USER\Software\Wine\Drivers' \
+    /v Graphics /d "$GRAPHICS" /t REG_SZ /f >/dev/null 2>&1
+  wine reg add 'HKEY_CURRENT_USER\Control Panel\Desktop' \
+    /v LogPixels /d "$DPI" /t REG_DWORD /f >/dev/null 2>&1
+}
+
+install_client() {
+  if [[ -f $EXE ]] && [[ $mode != reinstall ]]; then
+    return
+  fi
+  if [[ ! -f $INSTALLER ]]; then
+    step "downloading the KakaoTalk installer"
+    curl -fsSL --create-dirs -o "$INSTALLER" "$INSTALLER_URL"
+  fi
+  step "running the installer"
+  WINE_TIMEOUT=900 wine "$(printf 'Z:%s' "${INSTALLER//\//\\}")" /S >/dev/null 2>&1 || true
+  "$SERVER" -w
+}
+
+setup() {
+  mkdir -p "$CACHE"
+  ensure_prefix
+  apply_korean
+  install_fonts
+  substitute_korean_fonts
+  rename_chrome_fonts
+  link_emoji_font
+  set_driver_and_dpi
+  install_client
+}
+
+# The marker is the client, not a flag file: if the executable is there the
+# prefix has been through all of this, and if it is not then something went
+# wrong and doing it again is the right answer.
+if [[ $mode == reinstall ]] || [[ ! -f $EXE ]]; then
+  setup
+fi
+
+[[ $mode == setup ]] && exit 0
+
+# Wine keeps a record of the monitors and goes looking for one that is no
+# longer listed after a display comes or goes -- "Failed to find monitor with
+# path DISPLAY\Default_Monitor\0000&0001" -- and that stale record is what
+# throws the app's own popups across the screen. Dropping it costs nothing:
+# wine builds it again as it starts, with no wineboot needed.
+wine reg delete 'HKLM\System\CurrentControlSet\Enum\DISPLAY' /f >/dev/null 2>&1 || true
+
+exec "$WINE" "$EXE"

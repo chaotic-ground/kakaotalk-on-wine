@@ -1,0 +1,11 @@
+# flatpak-builder's working directories and the built repository.
+build-dir/
+repo/
+.flatpak-builder/
+
+# The Wine build the manifest consumes. It is a release asset, not a source
+# file: 57MB of binary that this repository describes rather than carries.
+*.tar.xz
+
+# Bundled at build time from the release assets too -- see the fonts module.
+fonts/

@@ -24,9 +24,18 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+# Two ways to have KakaoTalk installed, and whichever is there is used. The
+# flatpak is preferred: it carries its own Wine, patched so that emoji draw,
+# and needs nothing set up on the host. Bottles was how this started and
+# still works, so a machine part-way through the change is not left broken.
+readonly APP_ID=io.github.chaotic_ground.KakaoTalk
 readonly FLATPAK_ID=com.usebottles.bottles
 readonly BOTTLE=KakaoTalk
 readonly PROGRAM=카카오톡
+
+have_app() {
+  flatpak info "$APP_ID" >/dev/null 2>&1
+}
 
 # pgrep counts a zombie as running. KakaoTalk leaves them behind whenever its
 # launcher is killed rather than allowed to reap, and a zombie holds nothing
@@ -67,7 +76,8 @@ readonly LAUNCH_SECONDS=60
 launcher_pids() {
   # shellcheck disable=SC2009  # matching on the full command line, not a name
   ps -eo pid=,etimes=,args= |
-    awk -v head='bottles-cli run' -v tail=" -b $BOTTLE" -v limit="$LAUNCH_SECONDS" \
+    awk -v head='flatpak run' -v tail=" $(have_app && echo "$APP_ID" || echo "--command=bottles-cli")" \
+      -v limit="$LAUNCH_SECONDS" \
       -v want="$1" 'BEGIN { pattern = head tail }
         index($0, pattern) &&
         ((want == "young" && $2 < limit) || (want == "old" && $2 >= limit)) { print $1 }'
@@ -92,6 +102,9 @@ reap_stale_launchers() {
 }
 
 launch() {
+  if have_app; then
+    exec flatpak run "$APP_ID"
+  fi
   exec flatpak run --command=bottles-cli "$FLATPAK_ID" run -b "$BOTTLE" -p "$PROGRAM"
 }
 
@@ -102,8 +115,17 @@ stop() {
   # Windows app expects and what gives KakaoTalk the chance to write its
   # session out. Killing the process outright does not, and a login that has
   # to be typed again is the visible cost of that.
-  timeout 60 flatpak run --command=bottles-cli "$FLATPAK_ID" shell -b "$BOTTLE" \
-    -i 'taskkill /im KakaoTalk.exe' >/dev/null 2>&1 || true
+  #
+  # The asking happens inside whichever sandbox the app lives in; the
+  # insisting below happens out here, and has to. A flatpak instance has its
+  # own PID namespace, so nothing started inside one can signal a client
+  # running in another -- wineserver -k included, which works by pid.
+  if have_app; then
+    timeout 60 flatpak run "$APP_ID" --quit >/dev/null 2>&1 || true
+  else
+    timeout 60 flatpak run --command=bottles-cli "$FLATPAK_ID" shell -b "$BOTTLE" \
+      -i 'taskkill /im KakaoTalk.exe' >/dev/null 2>&1 || true
+  fi
 
   for _ in {1..15}; do
     running || return 0
@@ -151,9 +173,12 @@ case ${1-} in
     # "Failed to find monitor with path DISPLAY\Default_Monitor\0000&0001" --
     # and that stale record is what throws the app's own popups across the
     # screen. The key has to go; Wine builds it again at the next start, with
-    # no wineboot needed.
-    timeout 120 flatpak run --command=bottles-cli "$FLATPAK_ID" shell -b "$BOTTLE" \
-      -i 'reg delete "HKLM\System\CurrentControlSet\Enum\DISPLAY" /f' >/dev/null 2>&1 || true
+    # no wineboot needed. The flatpak drops it on every launch and needs no
+    # help here.
+    if ! have_app; then
+      timeout 120 flatpak run --command=bottles-cli "$FLATPAK_ID" shell -b "$BOTTLE" \
+        -i 'reg delete "HKLM\System\CurrentControlSet\Enum\DISPLAY" /f' >/dev/null 2>&1 || true
+    fi
     launch
     ;;
   *)

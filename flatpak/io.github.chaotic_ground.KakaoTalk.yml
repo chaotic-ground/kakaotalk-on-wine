@@ -1,0 +1,114 @@
+# KakaoTalk, in Korean, with the Wine it needs.
+#
+# The app id has an underscore where the GitHub organisation has a hyphen.
+# Flatpak ids follow D-Bus naming and a hyphen is not allowed in an element.
+#
+# Wine arrives as a built tarball rather than being compiled here. Wine's PE
+# modules need a cross compiler and the freedesktop SDK has no mingw
+# extension, so the build happens in a container -- see patches/README.md --
+# and its result is published as a release asset. The patch and the upstream
+# tarball it applies to are both in this repository, which is what makes that
+# binary accountable and satisfies Wine's licence.
+#
+# It is a WoW64 build, 32-bit and 64-bit both, although KakaoTalk itself is
+# 64-bit. The installer is not: Kakao ships the 64-bit client inside a 32-bit
+# NSIS installer, and a Wine with no 32-bit side stops at
+#
+#   wine: failed to load L"C:\\windows\\syswow64\\ntdll.dll" error c0000135
+#
+# KakaoTalk itself is not here and cannot be: it is Kakao's to distribute.
+# The launcher fetches the installer on first run.
+app-id: io.github.chaotic_ground.KakaoTalk
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+command: kakaotalk
+# The locale this builds stays in the app. Left to itself flatpak-builder
+# moves it into a .Locale extension, and a bundle carries no extensions, so
+# what ships is a symlink pointing at nothing.
+separate-locales: false
+
+finish-args:
+  - --socket=wayland
+  # XWayland as well, because Wine's Wayland driver is chosen at runtime and
+  # a prefix can be told to use X11 instead -- see WINE_GRAPHICS.
+  - --socket=fallback-x11
+  - --share=ipc
+  # Without these no 32-bit program runs at all, and the installer is one.
+  # Flatpak's seccomp filter blocks what WoW64 needs to put the CPU into
+  # 32-bit mode, so a 32-bit PE dies before it starts and wine reports it as
+  # "Application could not be started" from start.exe, which sounds like a
+  # missing file and is not. Bottles asks for the same two.
+  - --allow=multiarch
+  - --allow=devel
+  - --device=dri
+  - --socket=pulseaudio
+  # The installer comes from Kakao's CDN on first run, and the app is a
+  # messenger.
+  - --share=network
+  # Sending and receiving files is most of what the app is for, so give it
+  # the one directory that is for exactly that rather than all of $HOME.
+  - --filesystem=xdg-download
+  # The host's fonts arrive at /run/host/fonts without asking, and the two
+  # faces this cannot do without are bundled below, so there is nothing to
+  # request here. /usr is reserved by flatpak and asking for it is refused
+  # out loud on every launch.
+  - --env=WINEDEBUG=-all
+  # Set here rather than in the launcher so the shell that runs it starts
+  # with it. Exported from inside, the locale still reaches wine but bash has
+  # already fixed its own and complains about it on every launch.
+  - --env=LOCPATH=/app/lib/locale
+
+modules:
+  # ko_KR.UTF-8, built in. The runtime's Locale extension carries only the
+  # host's language and there is no per-app knob for that -- extra-languages
+  # is a global setting on the host, which is exactly the dependency this is
+  # meant to remove. localedef and the ko_KR source are both in the SDK.
+  - name: locale
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/lib/locale
+      - localedef --no-archive -i ko_KR -f UTF-8 /app/lib/locale/ko_KR.UTF-8
+    sources: []
+
+  - name: wine
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/wine
+      - cp -a wine-11.18-emoji/. /app/wine/
+    sources:
+      - type: archive
+        strip-components: 0
+        url: https://github.com/chaotic-ground/kakaotalk-on-wine/releases/download/wine-11.18-emoji/wine-11.18-emoji-wow64-x86_64.tar.xz
+        sha256: f9f5188b656bd7e1345c0569be581c3a0accb6815b7e34da3aaa49c87a5ec243
+
+  # The two faces the prefix cannot do without. Bundled rather than taken
+  # from the host: a prefix with no Korean font draws every Hangul glyph as a
+  # box, and the emoji face is what the font link points at.
+  - name: fonts
+    buildsystem: simple
+    build-commands:
+      - install -Dm644 NanumGothic.ttf /app/share/kakaotalk/fonts/NanumGothic.ttf
+      - install -Dm644 NanumGothicBold.ttf /app/share/kakaotalk/fonts/NanumGothicBold.ttf
+      - install -Dm644 NotoEmoji-Regular.ttf /app/share/kakaotalk/fonts/NotoEmoji-Regular.ttf
+    sources:
+      - type: file
+        url: https://github.com/chaotic-ground/kakaotalk-on-wine/releases/download/wine-11.18-emoji/NanumGothic.ttf
+        sha256: 31cf6994c8c022a086d8ac6f5662b5729d1cdbe26e6886eeeb43e59e89de05dd
+      - type: file
+        url: https://github.com/chaotic-ground/kakaotalk-on-wine/releases/download/wine-11.18-emoji/NanumGothicBold.ttf
+        sha256: 9a83877e343381d01b0b39a83be28fa4ece1309e73583663feb656a3da2a0ad2
+      - type: file
+        url: https://github.com/chaotic-ground/kakaotalk-on-wine/releases/download/wine-11.18-emoji/NotoEmoji-Regular.ttf
+        sha256: 4ac5d75ee7270e8dd76de58758bf0aae36fc56f1db3a1d41a41cd64b79265efa
+
+  - name: kakaotalk
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 kakaotalk /app/bin/kakaotalk
+      - install -Dm644 kakaotalk-korean.reg /app/share/kakaotalk/kakaotalk-korean.reg
+    sources:
+      - type: file
+        path: kakaotalk
+      - type: file
+        path: ../config/kakaotalk-korean.reg
