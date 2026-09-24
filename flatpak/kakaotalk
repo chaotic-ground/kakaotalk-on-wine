@@ -18,6 +18,7 @@
 #   kakaotalk --reinstall  install the client again over the top
 #   kakaotalk --setup      set up and stop, without running
 #   kakaotalk --quit       ask the running client to close
+#   kakaotalk --show       bring the hidden window back
 set -euo pipefail
 IFS=$'\n\t'
 
@@ -29,6 +30,8 @@ readonly WINE=/app/wine/bin/wine
 readonly SERVER=/app/wine/bin/wineserver
 readonly SHARE=/app/share/kakaotalk
 readonly CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/kakaotalk"
+# Where the outside asks for something to happen in here. See serve_control.
+readonly CONTROL="${XDG_DATA_HOME:-$HOME/.local/share}/control"
 
 # The 64-bit client. Kakao publishes three Windows builds; this is the one
 # the download page labels 기존버전, and the one every search result hands you
@@ -61,28 +64,23 @@ case ${1-} in
   --reinstall) mode=reinstall ;;
   --setup) mode=setup ;;
   --quit) mode=quit ;;
+  --show) mode=show ;;
   "") ;;
-  *) echo "usage: ${0##*/} [--reinstall|--setup|--quit]" >&2; exit 2 ;;
+  *) echo "usage: ${0##*/} [--reinstall|--setup|--quit|--show]" >&2; exit 2 ;;
 esac
 
 step() { echo "==> $*"; }
 
-# Ask before insisting. taskkill without /f sends WM_CLOSE, which is what a
-# Windows app expects and what gives KakaoTalk the chance to write its
-# session out; killing it outright costs a login that has to be typed again.
-if [[ $mode == quit ]]; then
-  # Asking, and only asking. taskkill without /f sends WM_CLOSE, which is
-  # what gives KakaoTalk the chance to write its session out, and it reaches
-  # the running client because it goes through the wineserver's socket in the
-  # shared /tmp rather than by process id.
-  #
-  # Insisting is not this instance's to do. Each flatpak instance has its own
-  # PID namespace, so from in here the running client cannot be seen, let
-  # alone signalled -- wineserver -k included, which works by pid. And
-  # KakaoTalk treats WM_CLOSE as "hide to the tray" rather than as an
-  # instruction to leave, so something does have to insist. That is the
-  # caller's job, from outside: see bin/kakaotalk-restart.
-  timeout 60 "$WINE" taskkill /im KakaoTalk.exe >/dev/null 2>&1 || true
+# Neither of these runs wine. They write a word into a file, and the instance
+# that owns the running client picks it up -- see serve_control for why that
+# indirection has to be there.
+#
+# The file is on the host filesystem, so the GNOME extension and
+# bin/kakaotalk-restart write it directly and never start an instance at all.
+# These two exist so that `flatpak run <app> --show` does what it looks like
+# it does.
+if [[ $mode == show ]] || [[ $mode == quit ]]; then
+  printf '%s\n' "$mode" >"$CONTROL"
   exit 0
 fi
 
@@ -268,5 +266,53 @@ fi
 # throws the app's own popups across the screen. Dropping it costs nothing:
 # wine builds it again as it starts, with no wineboot needed.
 wine reg delete 'HKLM\System\CurrentControlSet\Enum\DISPLAY' /f >/dev/null 2>&1 || true
+
+# Everything that has to reach the client once it is running has to happen in
+# here, inside the instance that started it. A second `flatpak run` cannot do
+# it: each instance gets its own PID namespace, and a wine process that looks
+# at another process across that boundary takes the whole session down with
+# it. Measured, and it is not a message that does it -- `wine tasklist` from a
+# second instance is enough, and so is kakaoshow --list, which only
+# enumerates. The client and its explorer are gone within five seconds, and
+# the login has to be typed again.
+#
+# So the outside writes a word into a file and this reads it. A plain file
+# and not a fifo, because one of the writers is a GNOME Shell extension:
+# opening a fifo for writing blocks until a reader arrives, and in
+# gnome-shell that is the whole desktop stopped.
+#
+# Half a second of latency, which for a window coming back is not noticeable,
+# and for a quit does not matter at all.
+serve_control() {
+  rm -f "$CONTROL"
+  while sleep 0.5; do
+    [[ -f $CONTROL ]] || continue
+    local want
+    want=$(<"$CONTROL")
+    rm -f "$CONTROL"
+    case $want in
+      # What the tray icon is for, without the tray icon. KakaoTalk hides
+      # rather than minimises, so once it is away there is no window to ask
+      # back, and its own tray menu does not open under the Wayland driver.
+      # A +msg trace of a real tray click shows what the app acts on: it
+      # posts itself one message and then calls ShowWindow. kakaoshow sends
+      # that message. See flatpak/kakaoshow.c.
+      show) timeout 60 "$WINE" "$SHARE/kakaoshow.exe" >/dev/null 2>&1 || true ;;
+      # Asking, and only asking. taskkill without /f sends WM_CLOSE, which is
+      # what a Windows app expects and what gives KakaoTalk the chance to
+      # write its session out; killing it outright costs a login that has to
+      # be typed again. KakaoTalk treats WM_CLOSE as "hide to the tray"
+      # rather than as an instruction to leave, so something still has to
+      # insist afterwards -- that is the caller's job, from outside. See
+      # bin/kakaotalk-restart.
+      quit) timeout 60 "$WINE" taskkill /im KakaoTalk.exe >/dev/null 2>&1 || true ;;
+    esac
+  done
+}
+
+# Left running deliberately. exec below replaces this shell, so there is
+# nothing here to clean it up; bwrap tears the namespace down when the client
+# exits and takes this with it.
+serve_control &
 
 exec "$WINE" "$EXE"

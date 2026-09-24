@@ -37,6 +37,22 @@ have_app() {
   flatpak info "$APP_ID" >/dev/null 2>&1
 }
 
+# The file the flatpak's launcher watches. It is under ~/.var/app, which is
+# the host's own filesystem, so writing it from out here costs nothing and
+# starts nothing.
+#
+# Which is the point: `flatpak run <app> --quit` would do the same thing, but
+# only after starting a second instance, and a second instance is exactly
+# what must not happen while the client is up. Each one gets its own PID
+# namespace, and a wine process that looks at another process across that
+# boundary takes the whole session down with it. See serve_control in
+# flatpak/kakaotalk.
+ask_app() {
+  local control=$HOME/.var/app/$APP_ID/data/control
+  [[ -d ${control%/*} ]] || return 1
+  printf '%s\n' "$1" >"$control"
+}
+
 # Enough of the prefix path to tell this install's processes from anyone
 # else's Wine.
 if have_app; then
@@ -147,12 +163,13 @@ stop() {
   # session out. Killing the process outright does not, and a login that has
   # to be typed again is the visible cost of that.
   #
-  # The asking happens inside whichever sandbox the app lives in; the
-  # insisting below happens out here, and has to. A flatpak instance has its
-  # own PID namespace, so nothing started inside one can signal a client
-  # running in another -- wineserver -k included, which works by pid.
+  # The asking happens inside whichever sandbox the app lives in -- the
+  # flatpak by way of ask_app, which never starts one -- and the insisting
+  # below happens out here, and has to. A flatpak instance has its own PID
+  # namespace, so nothing started inside one can signal a client running in
+  # another, wineserver -k included, which works by pid.
   if have_app; then
-    timeout 60 flatpak run "$APP_ID" --quit >/dev/null 2>&1 || true
+    ask_app quit || true
   else
     timeout 60 flatpak run --command=bottles-cli "$FLATPAK_ID" shell -b "$BOTTLE" \
       -i 'taskkill /im KakaoTalk.exe' >/dev/null 2>&1 || true

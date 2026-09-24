@@ -107,8 +107,14 @@ modules:
     build-commands:
       - install -Dm755 kakaotalk /app/bin/kakaotalk
       - install -Dm644 kakaotalk-korean.reg /app/share/kakaotalk/kakaotalk-korean.reg
+      - install -Dm644 kakaoshow.exe /app/share/kakaotalk/kakaoshow.exe
     sources:
       - type: file
         path: kakaotalk
+      # Built in the container with the rest -- the SDK has no PE compiler --
+      # and published alongside it. Source is flatpak/kakaoshow.c here.
+      - type: file
+        url: https://github.com/chaotic-ground/kakaotalk-on-wine/releases/download/wine-11.18-emoji/kakaoshow.exe
+        sha256: 548210a5a9d813d5341272c663a7cddc11b512eed7193e6d62727e1b81610847
       - type: file
         path: ../config/kakaotalk-korean.reg

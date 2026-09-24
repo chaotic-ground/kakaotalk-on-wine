@@ -93,6 +93,9 @@ const DEFAULT_CONFIG = {
     // Keep the tray window out of alt-tab and the overview. The indicator is
     // the way to it now, so its place in the window list is only clutter.
     hide_tray: true,
+    // And off the screen, where the app can be asked directly instead. See
+    // _retype.
+    hide_tray_window: true,
     // Do not raise a popup over a fullscreen window, the way GNOME holds its
     // own banners back. See _overFullscreen.
     respect_fullscreen: true,
@@ -232,6 +235,12 @@ export default class KakaoTalkPopup {
     enable() {
         this._pids = new Set();
         this._burst = null;
+        // Everything connected to a window or an actor rather than to the
+        // display, so disable() can let go of it. A handler left behind
+        // outlives the extension that made it: two enables of this file used
+        // to leave two recoveries firing for one closed tray.
+        this._tray = [];
+        this._hidden = new Set();
         this._installed = undefined;
         this._config = DEFAULT_CONFIG;
         this._configPath = GLib.build_filenamev(
@@ -261,6 +270,21 @@ export default class KakaoTalkPopup {
             this._focusId = null;
         }
         this._lastFocused = null;
+        for (const {obj, id, show} of this._tray ?? []) {
+            try {
+                obj.disconnect(id);
+                // And put the tray window back on screen. Leaving it hidden
+                // would leave the app unreachable by anything but this
+                // extension, which is not a state to hand back to the
+                // session.
+                if (show)
+                    obj.show();
+            } catch (e) {
+                // The window went before we did. Nothing to let go of.
+            }
+        }
+        this._tray = null;
+        this._hidden = null;
         this._indicator?.destroy();
         this._indicator = null;
         this._virtual = null;
@@ -417,6 +441,21 @@ export default class KakaoTalkPopup {
             if (this._config.log)
                 console.log(`${TAG} raising ${this._describe(main)}`);
             main.activate(global.get_current_time());
+            return;
+        }
+
+        // The tray is not needed when the app can simply be asked. kakaoshow
+        // posts KakaoTalk the message a tray click makes it post itself, so
+        // the window comes back without a floating tray window, without the
+        // pointer being warped across the screen, and without a second click
+        // from a hand. See flatpak/kakaoshow.c.
+        //
+        // Only the flatpak carries it. A Bottles install falls through to
+        // the tray below, which is what it has always done.
+        if (this.appInstalled()) {
+            if (this._config.log)
+                console.log(`${TAG} asking the app to show itself`);
+            this._askApp('show');
             return;
         }
 
@@ -577,6 +616,16 @@ export default class KakaoTalkPopup {
         if (this._config.hide_tray && window.get_wm_class() === 'explorer.exe') {
             if (window.get_window_type() !== Meta.WindowType.UTILITY)
                 window.set_type(Meta.WindowType.UTILITY);
+            // And off the screen entirely, once there is another way in.
+            // The tray exists to be clicked and nothing else; with --show
+            // the indicator asks the app directly and the window is a small
+            // square of leftover in the corner.
+            //
+            // Only where --show exists. A Bottles install still reaches the
+            // app by having a hand click that window, so hiding it there
+            // would take away the only way back.
+            if (this._config.hide_tray_window && this.appInstalled())
+                this._hideTrayWindow(window);
             return true;
         }
 
@@ -697,8 +746,15 @@ export default class KakaoTalkPopup {
         if (OWNER_CLASSES.includes(wmClass) && pid > 0)
             this._pids.add(pid);
 
-        if (owned_tray_check(wmClass))
+        if (owned_tray_check(wmClass)) {
             this._watchTray(window);
+            // Again here, and not only from _retype: at creation the actor
+            // does not exist yet, and there is nothing to hide until it
+            // does. This runs on the first frame, so by now it does.
+            if (this._config.hide_tray && this._config.hide_tray_window &&
+                this.appInstalled())
+                this._hideTrayWindow(window);
+        }
 
         const owned = this._pids.has(pid);
         if (this._config.log)
@@ -810,6 +866,34 @@ export default class KakaoTalkPopup {
         }
     }
 
+    // Taking the tray window off the screen, which is not the same as taking
+    // it out of the window list -- UTILITY above does that, and leaves a
+    // small square drawn in the corner. There is no wayland-side way to ask
+    // Wine not to map it, so the actor is what gets hidden.
+    //
+    // And hidden again afterwards: mutter shows the actor when it maps the
+    // window, and again on every workspace and overview transition, so a
+    // single hide() at create time is undone within the second. Cheap to
+    // repeat -- the window is one per run and never legitimately shown.
+    _hideTrayWindow(window) {
+        const actor = window.get_compositor_private();
+        // The set belongs to this enable and not to the actor, which outlives
+        // it. A flag stored on the actor survives a disable, and then the
+        // next enable finds it already set and does nothing -- the window
+        // stays as the previous version of this file left it, which is a
+        // poor way to find out whether a change works.
+        if (!actor || this._hidden.has(actor))
+            return;
+        this._hidden.add(actor);
+        const id = actor.connect('notify::visible', () => {
+            if (actor.visible)
+                actor.hide();
+        });
+        this._tray.push({obj: actor, id, show: true});
+        actor.hide();
+        console.log(`${TAG} tray window hidden`);
+    }
+
     // Closing Wine's tray window strands the app. KakaoTalk hides rather than
     // minimises, so once the tray is gone nothing can ask it to show itself
     // again -- the indicator has nothing to poke, and the only way back is a
@@ -820,7 +904,7 @@ export default class KakaoTalkPopup {
     // button, so it cannot be taken away from out here; only its consequence
     // can be undone.
     _watchTray(window) {
-        window.connect('unmanaged', () => {
+        const id = window.connect('unmanaged', () => {
             if (!this._config.recover_tray)
                 return;
             const now = GLib.get_monotonic_time();
@@ -830,6 +914,7 @@ export default class KakaoTalkPopup {
             console.log(`${TAG} tray window closed, recovering`);
             this._runHelper('--recover');
         });
+        this._tray.push({obj: window, id});
     }
 
     // Whether the flatpak is installed, as a fact the menu can be built
@@ -897,6 +982,28 @@ export default class KakaoTalkPopup {
     // and the recovery that would otherwise chase it stands down.
     _suppressRecovery() {
         this._lastRecover = GLib.get_monotonic_time();
+    }
+
+    // A word into the file the flatpak's launcher watches, and the instance
+    // already running the client does the rest.
+    //
+    // Not `flatpak run <app> --show`, which is the obvious thing and which
+    // kills the app: a second instance gets its own PID namespace, and a
+    // wine process that looks at another process across that boundary takes
+    // the whole session down with it -- the client and its explorer are gone
+    // within five seconds and the login has to be typed again. See
+    // serve_control in flatpak/kakaotalk.
+    //
+    // A plain file, so this never blocks. A fifo would be tidier and would
+    // stop the whole shell the first time nothing was listening.
+    _askApp(word) {
+        const path = GLib.build_filenamev(
+            [GLib.get_home_dir(), '.var', 'app', APP_ID, 'data', 'control']);
+        try {
+            GLib.file_set_contents(path, `${word}\n`);
+        } catch (e) {
+            console.log(`${TAG} could not ask for ${word}: ${e.message}`);
+        }
     }
 
     // Full path rather than a name on PATH: the shell's PATH is whatever the

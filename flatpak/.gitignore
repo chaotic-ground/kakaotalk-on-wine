@@ -9,3 +9,7 @@ repo/
 
 # Bundled at build time from the release assets too -- see the fonts module.
 fonts/
+
+# A manifest with local paths, for iterating before a release exists.
+local-manifest.yml
+*.exe

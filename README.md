@@ -94,6 +94,13 @@ nobody repeats the search:
   Only the compositor can raise it, which is what the panel indicator asks it
   to do. Left-click it and the window comes forward, correctly drawn.
 
+  With the flatpak the tray is out of it entirely. `flatpak/kakaoshow.c`
+  posts the app the same `WM_COMMAND` a tray click makes it post itself, so
+  the indicator asks the app directly -- no floating tray window, no pointer
+  warped across the screen, no second click from a hand. The tray window is
+  hidden outright where that works; a Bottles install keeps it, since there
+  the hand clicking it is the only way back.
+
   A leftover makes this worse than it needs to be: every notification strands
   a 107x29 window titled 카카오톡, the same title the real one carries, and
   anything matching on title alone finds that instead. The extension did, and
@@ -172,6 +179,24 @@ Bottles ships survives because it lives in the flatpak runtime's read-only
 right after extracting and says this instead of letting Wine say the other
 thing.
 
+**A second `flatpak run` of a running app kills it.** Not a second client --
+that failure is known and guarded. This is any wine process at all in a
+second instance, as soon as it looks at another process: `wine tasklist` is
+enough, and so is a bare `EnumWindows` walk that calls `OpenProcess`. The
+client and its `explorer.exe` are gone within five seconds and the login has
+to be typed again. Each flatpak instance gets its own PID namespace, and the
+processes that wine reads across that boundary are not the ones it thinks
+they are. `wine cmd /c ver` in a second instance is harmless, and the same
+enumeration run inside the *first* instance, through `flatpak enter`, is
+harmless too, which is what pins it on the namespace rather than on the app.
+
+So nothing reaches a running client by starting an instance. `--show` and
+`--quit` write a word into a file under `~/.var/app`, which is the host's own
+filesystem, and the instance that owns the client picks it up -- see
+`serve_control` in `flatpak/kakaotalk`. It is a plain file and not a fifo
+because one of the writers is a GNOME Shell extension, and opening a fifo for
+writing blocks until a reader arrives.
+
 **GNOME will not notice a new desktop file id's actions,** or a new extension
 directory, until the next login, and a Wayland session cannot restart the
 shell. Hence `kakaotalk-bottle.desktop` rather than `kakaotalk.desktop`, and
@@ -194,6 +219,8 @@ disable/enable instead of a logout.
   user, no root. What the indicator calls when nothing is installed yet.
 - `flatpak/` — the manifest and the launcher inside it. Built from the
   release assets, so it stands on its own rather than needing this checkout.
+  `kakaoshow.c` is the one Windows program here: it asks a running KakaoTalk
+  to show its window, which is what makes the tray dispensable.
 - `bin/wayland-screenshot` — capture through the desktop portal, for when the
   app's windows are no longer XWayland and nothing else can see them.
 - `bin/kakaotalk-hang-report` — thread states, and backtraces resolved to
