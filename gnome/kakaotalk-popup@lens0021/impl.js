@@ -132,12 +132,18 @@ const POPUP_TITLE = 'KakaoTalkShadowWnd';
 // thing itself. See _findMainWindow.
 const MAIN_MIN_HEIGHT = 240;
 
-// Above this, an owned untitled window is part of a notification; below it,
-// it is something the app draws over its own window, like the date that
-// appears while a conversation is scrolled. Measured: a notification's
-// shadow is 318 wide and its message not much less, while the date is 82.
-// See _placeOverlay.
+// The band an owned untitled window has to fall in to be something the app
+// draws over its own window, like the date that appears while a conversation
+// is scrolled. Measured: that date is 82x33, a notification's shadow is 318
+// wide and its message not much less.
+//
+// The floor is not decoration. Without it this took a 16x16 window -- there
+// are several, and what they are for is not known here -- moved it over the
+// conversation and put it permanently above everything. Whatever they are,
+// they are not something to be placed. See _placeOverlay.
 const OVERLAY_MAX_WIDTH = 200;
+const OVERLAY_MIN_WIDTH = 40;
+const OVERLAY_MIN_HEIGHT = 20;
 
 // Where in the window it belongs over: centred, and down far enough to clear
 // the room's header. A twelfth of the height is what that comes to at the
@@ -426,7 +432,8 @@ export default class KakaoTalkPopup {
         if (window.get_title() !== '')
             return false;
         const rect = window.get_frame_rect();
-        return rect.width < OVERLAY_MAX_WIDTH && rect.height < MAIN_MIN_HEIGHT;
+        return rect.width >= OVERLAY_MIN_WIDTH && rect.width < OVERLAY_MAX_WIDTH &&
+               rect.height >= OVERLAY_MIN_HEIGHT && rect.height < MAIN_MIN_HEIGHT;
     }
 
     // Over the window it belongs to, which the compositor will not do by

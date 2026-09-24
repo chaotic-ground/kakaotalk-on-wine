@@ -413,9 +413,16 @@ serve_control() {
   done
 }
 
-# Left running deliberately. exec below replaces this shell, so there is
-# nothing here to clean it up; bwrap tears the namespace down when the client
-# exits and takes this with it.
+# Not exec, and this is why: bwrap waits for everything in the sandbox, not
+# only for the process it started, so a loop left running in the background
+# holds the whole instance open after the client has gone. That is what
+# happened -- eight dead sandboxes after a morning of restarts, each with
+# nothing in it but this loop, and with enough of them about a fresh launch
+# never got a client at all.
+#
+# So the client runs in the foreground and the loop is ended after it.
 serve_control &
+readonly CONTROL_PID=$!
+trap 'kill "$CONTROL_PID" 2>/dev/null || true; rm -f "$CONTROL"' EXIT INT TERM HUP
 
-exec "$WINE" "$EXE"
+"$WINE" "$EXE"
