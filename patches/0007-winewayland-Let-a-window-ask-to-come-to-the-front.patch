@@ -1,0 +1,385 @@
+From 82d1cade7c1cd5223d4b8584cb545c9870f99c48 Mon Sep 17 00:00:00 2001
+From: lens0021 <leslie@portone.io>
+Date: Thu, 24 Sep 2026 20:53:25 +0900
+Subject: [PATCH] winewayland: Let a window ask to come to the front
+
+The driver interface has pActivateWindow and winewayland does not
+implement it, so a window that calls SetForegroundWindow on itself
+reaches nothing. X11 sends _NET_ACTIVE_WINDOW there. Wayland has
+xdg-activation for the same thing.
+
+Ask the compositor for a token, attach the last input serial and the
+seat, and activate the surface when the token arrives. The serial is
+what tells the compositor the request follows something the user did.
+Without it the compositor is free to flag the window instead of
+raising it.
+---
+ dlls/winewayland.drv/Makefile.in           |   1 +
+ dlls/winewayland.drv/wayland.c             |   5 +
+ dlls/winewayland.drv/waylanddrv.h          |   3 +
+ dlls/winewayland.drv/waylanddrv_main.c     |   1 +
+ dlls/winewayland.drv/window.c              |  72 ++++++++
+ dlls/winewayland.drv/xdg-activation-v1.xml | 200 +++++++++++++++++++++
+ 6 files changed, 282 insertions(+)
+ create mode 100644 dlls/winewayland.drv/xdg-activation-v1.xml
+
+diff --git a/dlls/winewayland.drv/Makefile.in b/dlls/winewayland.drv/Makefile.in
+index d2b02ce6..0916c87d 100644
+--- a/dlls/winewayland.drv/Makefile.in
++++ b/dlls/winewayland.drv/Makefile.in
+@@ -30,6 +30,7 @@ SOURCES = \
+ 	window.c \
+ 	window_surface.c \
+ 	wlr-data-control-unstable-v1.xml \
++	xdg-activation-v1.xml \
+ 	xdg-output-unstable-v1.xml \
+ 	xdg-shell.xml \
+ 	xdg-toplevel-icon-v1.xml
+diff --git a/dlls/winewayland.drv/wayland.c b/dlls/winewayland.drv/wayland.c
+index 52ba39ce..d3dcb329 100644
+--- a/dlls/winewayland.drv/wayland.c
++++ b/dlls/winewayland.drv/wayland.c
+@@ -189,6 +189,11 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
+         process_wayland.wl_data_device_manager =
+             wl_registry_bind(registry, id, &wl_data_device_manager_interface, 2);
+     }
++    else if (strcmp(interface, "xdg_activation_v1") == 0)
++    {
++        process_wayland.xdg_activation_v1 =
++            wl_registry_bind(registry, id, &xdg_activation_v1_interface, 1);
++    }
+     else if (strcmp(interface, "xdg_toplevel_icon_manager_v1") == 0)
+     {
+         process_wayland.xdg_toplevel_icon_manager_v1 =
+diff --git a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv.h
+index f31fc662..7d129445 100644
+--- a/dlls/winewayland.drv/waylanddrv.h
++++ b/dlls/winewayland.drv/waylanddrv.h
+@@ -37,6 +37,7 @@
+ #include "xdg-output-unstable-v1-client-protocol.h"
+ #include "xdg-shell-client-protocol.h"
+ #include "wlr-data-control-unstable-v1-client-protocol.h"
++#include "xdg-activation-v1-client-protocol.h"
+ #include "xdg-toplevel-icon-v1-client-protocol.h"
+ #include "pointer-warp-v1-client-protocol.h"
+ #include "alpha-modifier-v1-client-protocol.h"
+@@ -192,6 +193,7 @@ struct wayland
+     struct zwlr_data_control_manager_v1 *zwlr_data_control_manager_v1;
+     struct wl_data_device_manager *wl_data_device_manager;
+     struct xdg_toplevel_icon_manager_v1 *xdg_toplevel_icon_manager_v1;
++    struct xdg_activation_v1 *xdg_activation_v1;
+     struct wp_cursor_shape_manager_v1 *wp_cursor_shape_manager_v1;
+     struct wp_pointer_warp_v1 *wp_pointer_warp_v1;
+     struct wp_alpha_modifier_v1 *wp_alpha_modifier_v1;
+@@ -462,6 +464,7 @@ RGNDATA *get_region_data(HRGN region);
+  *          USER driver functions
+  */
+ 
++void WAYLAND_ActivateWindow(HWND hwnd, HWND previous);
+ LRESULT WAYLAND_ClipboardWindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
+ BOOL WAYLAND_ClipCursor(const RECT *clip, BOOL reset);
+ LRESULT WAYLAND_DesktopWindowProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
+diff --git a/dlls/winewayland.drv/waylanddrv_main.c b/dlls/winewayland.drv/waylanddrv_main.c
+index 275a3907..79e553c3 100644
+--- a/dlls/winewayland.drv/waylanddrv_main.c
++++ b/dlls/winewayland.drv/waylanddrv_main.c
+@@ -34,6 +34,7 @@ char *process_name = NULL;
+ 
+ static const struct user_driver_funcs waylanddrv_funcs =
+ {
++    .pActivateWindow = WAYLAND_ActivateWindow,
+     .pClipboardWindowProc = WAYLAND_ClipboardWindowProc,
+     .pClipCursor = WAYLAND_ClipCursor,
+     .pDesktopWindowProc = WAYLAND_DesktopWindowProc,
+diff --git a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
+index 41a17228..64d83f66 100644
+--- a/dlls/winewayland.drv/window.c
++++ b/dlls/winewayland.drv/window.c
+@@ -663,6 +663,78 @@ void WAYLAND_SetLayeredWindowAttributes(HWND hwnd, COLORREF key, BYTE alpha, DWO
+     wayland_win_data_release(data);
+ }
+ 
++/*****************************************************************
++ *		WAYLAND_ActivateWindow
++ *
++ * 창이 자기를 앞으로 내달라고 한다. Wayland에서 그것을 하는 것이
++ * xdg-activation이다. 컴포지터에서 토큰을 받고, 그 토큰을 가진 쪽이
++ * 표면을 올릴 수 있다. 마지막 입력 시리얼을 붙이는데, 이 요청이
++ * 사용자가 한 일을 따라온 것이라고 컴포지터에게 말하는 것이 그것이다.
++ * 시리얼이 없거나 오래되었으면 컴포지터는 창을 올리는 대신 표시만
++ * 해도 되고, mutter는 정확히 그렇게 한다.
++ */
++static void activation_token_handle_done(void *private,
++                                         struct xdg_activation_token_v1 *token,
++                                         const char *token_string)
++{
++    HWND hwnd = private;
++    struct wayland_win_data *data;
++    struct wayland_surface *surface;
++
++    TRACE("hwnd=%p token=%s\n", hwnd, debugstr_a(token_string));
++
++    if ((data = wayland_win_data_get(hwnd)))
++    {
++        if ((surface = data->wayland_surface) && wayland_surface_is_toplevel(surface))
++        {
++            xdg_activation_v1_activate(process_wayland.xdg_activation_v1,
++                                       token_string, surface->wl_surface);
++            wl_display_flush(process_wayland.wl_display);
++        }
++        wayland_win_data_release(data);
++    }
++
++    xdg_activation_token_v1_destroy(token);
++}
++
++static const struct xdg_activation_token_v1_listener activation_token_listener =
++{
++    activation_token_handle_done
++};
++
++void WAYLAND_ActivateWindow(HWND hwnd, HWND previous)
++{
++    struct xdg_activation_token_v1 *token;
++    struct wayland_win_data *data;
++    struct wayland_surface *surface;
++
++    TRACE("hwnd=%p previous=%p\n", hwnd, previous);
++
++    if (!process_wayland.xdg_activation_v1) return;
++    if (!(data = wayland_win_data_get(hwnd))) return;
++
++    if ((surface = data->wayland_surface) && wayland_surface_is_toplevel(surface))
++    {
++        token = xdg_activation_v1_get_activation_token(process_wayland.xdg_activation_v1);
++        xdg_activation_token_v1_add_listener(token, &activation_token_listener, hwnd);
++
++        pthread_mutex_lock(&process_wayland.seat.mutex);
++        if (process_wayland.seat.wl_seat)
++        {
++            xdg_activation_token_v1_set_serial(token, process_wayland.input_serial,
++                                               process_wayland.seat.wl_seat);
++        }
++        pthread_mutex_unlock(&process_wayland.seat.mutex);
++
++        if (process_name) xdg_activation_token_v1_set_app_id(token, process_name);
++        xdg_activation_token_v1_set_surface(token, surface->wl_surface);
++        xdg_activation_token_v1_commit(token);
++        wl_display_flush(process_wayland.wl_display);
++    }
++
++    wayland_win_data_release(data);
++}
++
+ static enum xdg_toplevel_resize_edge hittest_to_resize_edge(WPARAM hittest)
+ {
+     switch (hittest)
+diff --git a/dlls/winewayland.drv/xdg-activation-v1.xml b/dlls/winewayland.drv/xdg-activation-v1.xml
+new file mode 100644
+index 00000000..9adcc274
+--- /dev/null
++++ b/dlls/winewayland.drv/xdg-activation-v1.xml
+@@ -0,0 +1,200 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<protocol name="xdg_activation_v1">
++
++  <copyright>
++    Copyright © 2020 Aleix Pol Gonzalez &lt;aleixpol@kde.org&gt;
++    Copyright © 2020 Carlos Garnacho &lt;carlosg@gnome.org&gt;
++
++    Permission is hereby granted, free of charge, to any person obtaining a
++    copy of this software and associated documentation files (the "Software"),
++    to deal in the Software without restriction, including without limitation
++    the rights to use, copy, modify, merge, publish, distribute, sublicense,
++    and/or sell copies of the Software, and to permit persons to whom the
++    Software is furnished to do so, subject to the following conditions:
++
++    The above copyright notice and this permission notice (including the next
++    paragraph) shall be included in all copies or substantial portions of the
++    Software.
++
++    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
++    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
++    DEALINGS IN THE SOFTWARE.
++  </copyright>
++
++  <description summary="Protocol for requesting activation of surfaces">
++    The way for a client to pass focus to another toplevel is as follows.
++
++    The client that intends to activate another toplevel uses the
++    xdg_activation_v1.get_activation_token request to get an activation token.
++    This token is then forwarded to the client, which is supposed to activate
++    one of its surfaces, through a separate band of communication.
++
++    One established way of doing this is through the XDG_ACTIVATION_TOKEN
++    environment variable of a newly launched child process. The child process
++    should unset the environment variable again right after reading it out in
++    order to avoid propagating it to other child processes.
++
++    Another established way exists for Applications implementing the D-Bus
++    interface org.freedesktop.Application, which should get their token under
++    activation-token on their platform_data.
++
++    In general activation tokens may be transferred across clients through
++    means not described in this protocol.
++
++    The client to be activated will then pass the token
++    it received to the xdg_activation_v1.activate request. The compositor can
++    then use this token to decide how to react to the activation request.
++
++    The token the activating client gets may be ineffective either already at
++    the time it receives it, for example if it was not focused, for focus
++    stealing prevention. The activating client will have no way to discover
++    the validity of the token, and may still forward it to the to be activated
++    client.
++
++    The created activation token may optionally get information attached to it
++    that can be used by the compositor to identify the application that we
++    intend to activate. This can for example be used to display a visual hint
++    about what application is being started.
++
++    Warning! The protocol described in this file is currently in the testing
++    phase. Backward compatible changes may be added together with the
++    corresponding interface version bump. Backward incompatible changes can
++    only be done by creating a new major version of the extension.
++  </description>
++
++  <interface name="xdg_activation_v1" version="1">
++    <description summary="interface for activating surfaces">
++      A global interface used for informing the compositor about applications
++      being activated or started, or for applications to request to be
++      activated.
++    </description>
++
++    <request name="destroy" type="destructor">
++      <description summary="destroy the xdg_activation object">
++        Notify the compositor that the xdg_activation object will no longer be
++        used.
++
++        The child objects created via this interface are unaffected and should
++        be destroyed separately.
++      </description>
++    </request>
++
++    <request name="get_activation_token">
++      <description summary="requests a token">
++        Creates an xdg_activation_token_v1 object that will provide
++        the initiating client with a unique token for this activation. This
++        token should be offered to the clients to be activated.
++      </description>
++
++      <arg name="id" type="new_id" interface="xdg_activation_token_v1"/>
++    </request>
++
++    <request name="activate">
++      <description summary="notify new interaction being available">
++        Requests surface activation. It's up to the compositor to display
++        this information as desired, for example by placing the surface above
++        the rest.
++
++        The compositor may know who requested this by checking the activation
++        token and might decide not to follow through with the activation if it's
++        considered unwanted.
++
++        Compositors can ignore unknown activation tokens when an invalid
++        token is passed.
++      </description>
++      <arg name="token" type="string" summary="the activation token of the initiating client"/>
++      <arg name="surface" type="object" interface="wl_surface"
++	   summary="the wl_surface to activate"/>
++    </request>
++  </interface>
++
++  <interface name="xdg_activation_token_v1" version="1">
++    <description summary="an exported activation handle">
++      An object for setting up a token and receiving a token handle that can
++      be passed as an activation token to another client.
++
++      The object is created using the xdg_activation_v1.get_activation_token
++      request. This object should then be populated with the app_id, surface
++      and serial information and committed. The compositor shall then issue a
++      done event with the token. In case the request's parameters are invalid,
++      the compositor will provide an invalid token.
++    </description>
++
++    <enum name="error">
++      <entry name="already_used" value="0"
++             summary="The token has already been used previously"/>
++    </enum>
++
++    <request name="set_serial">
++      <description summary="specifies the seat and serial of the activating event">
++        Provides information about the seat and serial event that requested the
++        token.
++
++        The serial can come from an input or focus event. For instance, if a
++        click triggers the launch of a third-party client, the launcher client
++        should send a set_serial request with the serial and seat from the
++        wl_pointer.button event.
++
++        Some compositors might refuse to activate toplevels when the token
++        doesn't have a valid and recent enough event serial.
++
++        Must be sent before commit. This information is optional.
++      </description>
++      <arg name="serial" type="uint"
++           summary="the serial of the event that triggered the activation"/>
++      <arg name="seat" type="object" interface="wl_seat"
++           summary="the wl_seat of the event"/>
++    </request>
++
++    <request name="set_app_id">
++      <description summary="specifies the application being activated">
++        The requesting client can specify an app_id to associate the token
++        being created with it.
++
++        Must be sent before commit. This information is optional.
++      </description>
++      <arg name="app_id" type="string"
++           summary="the application id of the client being activated."/>
++    </request>
++
++    <request name="set_surface">
++      <description summary="specifies the surface requesting activation">
++        This request sets the surface requesting the activation. Note, this is
++        different from the surface that will be activated.
++
++        Some compositors might refuse to activate toplevels when the token
++        doesn't have a requesting surface.
++
++        Must be sent before commit. This information is optional.
++      </description>
++      <arg name="surface" type="object" interface="wl_surface"
++	   summary="the requesting surface"/>
++    </request>
++
++    <request name="commit">
++      <description summary="issues the token request">
++        Requests an activation token based on the different parameters that
++        have been offered through set_serial, set_surface and set_app_id.
++      </description>
++    </request>
++
++    <event name="done">
++      <description summary="the exported activation token">
++        The 'done' event contains the unique token of this activation request
++        and notifies that the provider is done.
++      </description>
++      <arg name="token" type="string" summary="the exported activation token"/>
++    </event>
++
++    <request name="destroy" type="destructor">
++      <description summary="destroy the xdg_activation_token_v1 object">
++        Notify the compositor that the xdg_activation_token_v1 object will no
++        longer be used. The received token stays valid.
++      </description>
++    </request>
++  </interface>
++</protocol>
+-- 
+2.55.0
+

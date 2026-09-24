@@ -107,6 +107,9 @@ const DEFAULT_CONFIG = {
     // 팝업의 장식을 숨긴다. 그림자와, 알림이 남기는 띠. 둘 다 메시지를
     // 담고 있지 않다. _hideChrome을 보라.
     hide_popup_chrome: true,
+    // 창이 앞으로 나오겠다고 하면 내보내 준다. _onDemandsAttention을
+    // 보라.
+    raise_on_demand: true,
     // 앱이 자기 창 위에 그리는 것을 그 위로 돌려놓는다. 대화를 스크롤할 때
     // 뜨는 날짜 같은 것. _placeOverlay를 보라.
     place_overlays: true,
@@ -286,6 +289,12 @@ export default class KakaoTalkPopup {
 
         this._createdId = global.display.connect('window-created',
             (_display, window) => this._onWindowCreated(window));
+        this._attentionIds = [
+            global.display.connect('window-demands-attention',
+                (_display, window) => this._onDemandsAttention(window)),
+            global.display.connect('window-marked-urgent',
+                (_display, window) => this._onDemandsAttention(window)),
+        ];
         this._watchFocus();
         this._addIndicator();
         console.log(`${TAG} enabled, config=${this._configPath}`);
@@ -296,6 +305,9 @@ export default class KakaoTalkPopup {
             global.display.disconnect(this._createdId);
             this._createdId = null;
         }
+        for (const id of this._attentionIds ?? [])
+            global.display.disconnect(id);
+        this._attentionIds = null;
         this._monitor?.cancel();
         this._monitor = null;
         this._pids = null;
@@ -360,6 +372,34 @@ export default class KakaoTalkPopup {
         }
     }
 
+
+    // 알림을 눌렀을 때 대화창이 앞으로 나오는 것. 앱은 이미 요청하고
+    // 있다. Wine 패치 0007이 그 요청을 xdg-activation 토큰으로 내보내고,
+    // mutter는 토큰에 붙은 입력 시리얼을 보고 허락하거나 거절한다.
+    // 거절할 때 아무 일도 없는 것이 아니라 창에 표시를 남기는데, 그것이
+    // 이 신호다. 여기서 대신 올려준다.
+    //
+    // 셸에는 포커스 훔치기 방지가 없다. 확장이 activate()를 부르면
+    // 그대로 된다. mutter가 앱에게 안 주는 것을 확장이 주는 셈이고,
+    // 그래서 이것이 설정에 있다.
+    //
+    // 알림 조각은 빼야 한다. 그쪽은 포커스를 안 가져가게 하는 데 일부러
+    // 공을 들인 창이고, 여기서 올리면 그걸 도로 물린다.
+    _onDemandsAttention(window) {
+        // 거르기 전에 찍는다. 이 신호가 오는지 자체가 질문이었고, 거른
+        // 뒤에 찍으면 안 온 것과 걸러진 것을 구별할 수 없다.
+        if (this._config.log)
+            console.log(`${TAG} attention: ${this._describe(window)}`);
+        if (!this._config.raise_on_demand)
+            return;
+        if (window.get_wm_class() !== 'kakaotalk.exe')
+            return;
+        if (this._isPopupWindow(window) || this._isOverlay(window))
+            return;
+        window.activate(global.get_current_time());
+        if (this._config.log)
+            console.log(`${TAG} raised it`);
+    }
 
     // 새 메시지가 오면 팝업이 키보드를 같이 가져간다. 다른 데서 타자를
     // 치던 중이라면 메시지를 놓치는 것보다 나쁘고, 처음 보이는 것보다 더
