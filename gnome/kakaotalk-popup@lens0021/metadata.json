@@ -1,7 +1,7 @@
 {
   "uuid": "kakaotalk-popup@lens0021",
-  "name": "KakaoTalk popup placement",
-  "description": "Places KakaoTalk's new-message popup where the app asks for it. Wayland forbids a client from positioning its own windows, so the compositor has to do it on the app's behalf.",
+  "name": "KakaoTalk on Wayland",
+  "description": "Makes KakaoTalk usable under Wine's Wayland driver, which leaves it several things short. Puts the new-message popup where the app asks for it, since a Wayland client cannot place its own windows. Stops that popup taking the keyboard, which in the middle of typing sends the keystrokes to a chat room. Stands in for the tray, which Wayland has no protocol for: a panel indicator brings the window back and opens the app's own menu. And offers to install the app, since a shell extension lives where a sandboxed app cannot put itself.",
   "shell-version": ["48", "49"],
-  "version": 1
+  "version": 2
 }

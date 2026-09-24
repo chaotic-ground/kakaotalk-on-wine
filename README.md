@@ -260,15 +260,27 @@ disable/enable instead of a logout.
 - `config/kakaotalk-korean.reg` — UI language and Latin font substitutions,
   applied as a Bottles registry rule so a runner swap cannot undo it.
 - `config/kakaotalk-popup.json` — rules for the extension below.
-- `gnome/kakaotalk-popup@lens0021/` — places the new-message popup, all of
-  it: a notification is several windows and only one has a name to write a
-  rule for, so the rest move by the same offset rather than being left in
-  the middle of the screen. Does not raise it over a fullscreen window, the
-  way GNOME holds its own banners back. Adds a panel indicator that raises
-  KakaoTalk's window on a left click, or reaches it through the tray when it
-  is hidden, or starts the app when it is not running, and offers restart and
-  quit on a right click. Also restarts KakaoTalk if the tray window is
-  closed, which otherwise strands it with no way to ask it back.
+- `gnome/kakaotalk-popup@lens0021/` — "KakaoTalk on Wayland", which is most
+  of what the driver leaves short. The directory keeps its old name: GNOME
+  will not notice a new extension id until the next login, and a Wayland
+  session cannot restart the shell.
+
+  It places the new-message popup, all of it: a notification is several
+  windows and only one has a name to write a rule for, so the rest move to
+  the same corner rather than being left in the middle of the screen. It
+  stops that popup taking the keyboard, by re-typing it to NOTIFICATION,
+  which mutter never gives the focus to. That matters because the popup
+  carries a reply box, so keystrokes that land in it while the focus is away
+  are not lost but typed into a chat room. It does not raise a popup over a fullscreen window, the
+  way GNOME holds its own banners back.
+
+  It also stands in for the tray, which Wayland has no protocol for and Wine
+  therefore draws as a floating window. A left click on the panel indicator
+  brings the app's window back; a right click opens the app's own menu, moved
+  under the click and dismissed when the focus leaves it. The tray window
+  itself is hidden, since nothing needs to click it any more. And with
+  nothing installed the indicator offers to install it, since a shell
+  extension lives where a sandboxed app cannot put itself.
 
 ## License
 
