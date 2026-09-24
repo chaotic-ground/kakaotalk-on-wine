@@ -156,7 +156,14 @@ launch() {
 }
 
 stop() {
-  running || return 0
+  # The tray outlives the client. explorer.exe is its own process and nothing
+  # ends it when KakaoTalk goes, so a --quit that finds the app already gone
+  # still has leftovers to clear -- and leaving them is what stacks trays up
+  # at the corner of the screen for the indicator to poke at.
+  if ! running; then
+    reap_tray
+    return 0
+  fi
 
   # Ask before insisting. taskkill without /f sends WM_CLOSE, which is what a
   # Windows app expects and what gives KakaoTalk the chance to write its
