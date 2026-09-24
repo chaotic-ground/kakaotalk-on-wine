@@ -1,0 +1,180 @@
+From: kakaotalk-on-wine
+Subject: [PATCH] winewayland: Paste a picture
+
+Copying an image in a browser and pasting it into a Windows app did
+nothing. What the compositor offers is mime types and what the app asks
+for is CF_DIB, and the Wayland driver had nothing that joined the two:
+its table carries image/png, image/jpeg and image/gif as registered
+formats named "PNG", "JFIF" and "GIF", which no ordinary app looks
+for, and image/tiff as CF_TIFF, which few accept. There was no CF_DIB
+entry at all.
+
+The X11 driver has had image/bmp <-> CF_DIB since forever, so this is
+that, moved across. Firefox and GTK both offer image/bmp alongside
+image/png, so one table entry is enough to make the common case work.
+
+image/png is still not decoded, on either driver. That needs a decoder
+and is a separate question.
+---
+ dlls/winewayland.drv/wayland_data_device.c | 140 +++++++++++++++++++++
+ 1 file changed, 140 insertions(+)
+
+diff --git a/dlls/winewayland.drv/wayland_data_device.c b/dlls/winewayland.drv/wayland_data_device.c
+--- a/dlls/winewayland.drv/wayland_data_device.c
++++ b/dlls/winewayland.drv/wayland_data_device.c
+@@ -210,12 +210,152 @@ static void *import_data(void *data, size_t size, size_t *ret_size)
+     return data;
+ }
+ 
++/* The size of a BITMAPINFO including its colour table. */
++static int bitmap_info_size(const BITMAPINFO *info, WORD coloruse)
++{
++    unsigned int colors, size, masks = 0;
++
++    if (info->bmiHeader.biSize == sizeof(BITMAPCOREHEADER))
++    {
++        const BITMAPCOREHEADER *core = (const BITMAPCOREHEADER *)info;
++        colors = (core->bcBitCount <= 8) ? 1 << core->bcBitCount : 0;
++        return sizeof(BITMAPCOREHEADER) + colors *
++            ((coloruse == DIB_RGB_COLORS) ? sizeof(RGBTRIPLE) : sizeof(WORD));
++    }
++
++    colors = info->bmiHeader.biClrUsed;
++    if (!colors && (info->bmiHeader.biBitCount <= 8))
++        colors = 1 << info->bmiHeader.biBitCount;
++    if (info->bmiHeader.biCompression == BI_BITFIELDS) masks = 3;
++    size = max(info->bmiHeader.biSize, sizeof(BITMAPINFOHEADER) + masks * sizeof(DWORD));
++    return size + colors * ((coloruse == DIB_RGB_COLORS) ? sizeof(RGBQUAD) : sizeof(WORD));
++}
++
++/* Allocate a packed DIB and copy the bitmap data into it. */
++static void *create_dib_from_bitmap(HBITMAP bitmap, size_t *ret_size)
++{
++    BITMAPINFOHEADER *header;
++    unsigned int data_size, offset_bits;
++    int lines_copied;
++    BITMAP bmp;
++    char *ret;
++    HDC hdc;
++
++    if (!NtGdiExtGetObjectW(bitmap, sizeof(bmp), &bmp)) return NULL;
++
++    data_size = abs(bmp.bmHeight) * (((bmp.bmWidth * bmp.bmBitsPixel + 31) / 8) & ~3);
++    *ret_size = sizeof(BITMAPINFOHEADER) +
++                ((bmp.bmBitsPixel <= 8) ? (sizeof(RGBQUAD) * (1 << bmp.bmBitsPixel)) : 0) +
++                data_size;
++    offset_bits = *ret_size - data_size;
++
++    if (!(ret = malloc(*ret_size))) return NULL;
++
++    header = (BITMAPINFOHEADER *)ret;
++    header->biSize = sizeof(BITMAPINFOHEADER);
++    header->biWidth = bmp.bmWidth;
++    header->biHeight = bmp.bmHeight;
++    header->biPlanes = 1;
++    header->biBitCount = bmp.bmBitsPixel;
++    header->biCompression = BI_RGB;
++    header->biSizeImage = 0;
++    header->biXPelsPerMeter = header->biYPelsPerMeter = 0;
++    header->biClrUsed = 0;
++    header->biClrImportant = 0;
++
++    hdc = NtUserGetDC(0);
++    lines_copied = NtGdiGetDIBitsInternal(hdc, bitmap, 0, bmp.bmHeight, ret + offset_bits,
++                                          (BITMAPINFO *)header, 0, 0, 0);
++    NtUserReleaseDC(0, hdc);
++
++    if (lines_copied != bmp.bmHeight)
++    {
++        TRACE("GetDIBits returned %d, wanted %d\n", lines_copied, bmp.bmHeight);
++        free(ret);
++        ret = NULL;
++    }
++    return ret;
++}
++
++/* image/bmp is a packed DIB with a fourteen byte file header in front of it,
++ * so the conversion is mostly a matter of that header -- but not entirely.
++ * Going in, the bits can start anywhere bfOffBits says, which need not be
++ * where a packed DIB wants them, so the image is taken through a bitmap
++ * rather than memmoved. */
++static void *import_image_bmp(void *data, size_t size, size_t *ret_size)
++{
++    const BITMAPFILEHEADER *bfh = data;
++    const BITMAPINFO *bmi;
++    void *ret = NULL;
++    int width, height;
++    HBITMAP bitmap;
++    HDC hdc;
++
++    if (size < sizeof(BITMAPFILEHEADER) + sizeof(BITMAPCOREHEADER)) return NULL;
++    if (bfh->bfType != 0x4d42 /* "BM" */) return NULL;
++
++    bmi = (const BITMAPINFO *)(bfh + 1);
++    if (bmi->bmiHeader.biSize == sizeof(BITMAPCOREHEADER))
++    {
++        const BITMAPCOREHEADER *core = (const BITMAPCOREHEADER *)bmi;
++        width = core->bcWidth;
++        height = core->bcHeight;
++    }
++    else if (bmi->bmiHeader.biSize >= sizeof(BITMAPINFOHEADER))
++    {
++        /* A BMP whose payload is a JPEG or a PNG. Only a printer driver is
++         * expected to understand those, and nothing here does. */
++        if (bmi->bmiHeader.biCompression == BI_JPEG ||
++            bmi->bmiHeader.biCompression == BI_PNG)
++            return NULL;
++        width = bmi->bmiHeader.biWidth;
++        height = bmi->bmiHeader.biHeight;
++    }
++    else return NULL;
++
++    if (!width || !height) return NULL;
++
++    hdc = NtUserGetDC(0);
++    if ((bitmap = NtGdiCreateDIBitmapInternal(hdc, width, height, CBM_INIT,
++                                              (const BYTE *)data + bfh->bfOffBits, bmi,
++                                              DIB_RGB_COLORS, 0, 0, 0, 0)))
++    {
++        ret = create_dib_from_bitmap(bitmap, ret_size);
++        NtGdiDeleteObjectApp(bitmap);
++    }
++    NtUserReleaseDC(0, hdc);
++
++    return ret;
++}
++
++static void *export_image_bmp(void *data, size_t size, size_t *ret_size)
++{
++    BITMAPFILEHEADER *bfh;
++    size_t bmp_size;
++
++    bmp_size = sizeof(BITMAPFILEHEADER) + size;
++    if (!(bfh = malloc(bmp_size))) return NULL;
++
++    bfh->bfType = 0x4d42; /* "BM" */
++    bfh->bfSize = bmp_size;
++    bfh->bfReserved1 = 0;
++    bfh->bfReserved2 = 0;
++    bfh->bfOffBits = sizeof(BITMAPFILEHEADER) +
++                     bitmap_info_size((BITMAPINFO *)data, DIB_RGB_COLORS);
++
++    memcpy(bfh + 1, data, size);
++
++    *ret_size = bmp_size;
++    return bfh;
++}
++
+ /* Order is important. When selecting a mime-type for a clipboard format we
+  * will choose the first entry that matches the specified clipboard format. */
+ static struct data_device_format supported_formats[] =
+ {
+     {"text/plain;charset=utf-8", CF_UNICODETEXT, NULL, export_unicode_text, import_unicode_text},
+     {"text/rtf", 0, rich_text_formatW, export_data, import_data},
++    {"image/bmp", CF_DIB, NULL, export_image_bmp, import_image_bmp},
+     {"image/tiff", CF_TIFF, NULL, export_data, import_data},
+     {"image/png", 0, pngW, export_data, import_data},
+     {"image/jpeg", 0, jfifW, export_data, import_data},
+-- 
+2.55.0
+
