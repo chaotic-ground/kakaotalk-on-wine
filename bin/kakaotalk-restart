@@ -37,6 +37,14 @@ have_app() {
   flatpak info "$APP_ID" >/dev/null 2>&1
 }
 
+# Enough of the prefix path to tell this install's processes from anyone
+# else's Wine.
+if have_app; then
+  readonly PREFIX_HINT=$APP_ID
+else
+  readonly PREFIX_HINT=bottles/bottles/$BOTTLE
+fi
+
 # pgrep counts a zombie as running. KakaoTalk leaves them behind whenever its
 # launcher is killed rather than allowed to reap, and a zombie holds nothing
 # but a pid slot -- so treating one as a live process means waiting twenty
@@ -101,6 +109,29 @@ reap_stale_launchers() {
   sleep 1
 }
 
+# explorer.exe is a separate process and does not go when the client does, so
+# every start and stop used to leave one behind. Each keeps drawing a tray
+# window, and they stack up at the same corner of the screen -- four of them
+# after a day of testing, two still drawing trays with no client under them.
+#
+# That is worse than clutter. The indicator raises whichever tray it finds
+# first and puts the pointer on it, so a click can land on a tray belonging
+# to an instance that is gone; mutter pings it, hears nothing, and puts up
+# "explorer.exe is not responding" over a desktop where nothing is wrong.
+#
+# Scoped by the prefix in the process's own environment rather than by name,
+# so a tray belonging to some other Wine prefix is left alone.
+reap_tray() {
+  # shellcheck disable=SC2009  # matching on the full command line, not a name
+  for pid in $(ps -eo pid=,args= | grep -a '[e]xplorer\.exe' | awk '{print $1}'); do
+    local env_file=/proc/$pid/environ
+    [[ -r $env_file ]] || continue
+    if tr '\0' '\n' <"$env_file" 2>/dev/null | grep -q "^WINEPREFIX=.*$PREFIX_HINT"; then
+      kill "$pid" 2>/dev/null || true
+    fi
+  done
+}
+
 launch() {
   if have_app; then
     exec flatpak run "$APP_ID"
@@ -134,6 +165,7 @@ stop() {
 
   # It did not go. Insist.
   pkill -f 'KakaoTalk\.exe' || true
+  reap_tray
   # Wait for the prefix to go quiet. A new instance started while the old
   # wineserver is still winding down tends to exit without a window.
   for _ in {1..20}; do

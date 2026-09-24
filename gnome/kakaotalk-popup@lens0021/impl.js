@@ -451,9 +451,17 @@ export default class KakaoTalkPopup {
         ];
 
         // The click goes wherever the pointer is, to whatever is on top, so
-        // the window has to be up front before the pointer arrives.
+        // the window has to be up front before the pointer arrives. Raised
+        // and not activated: raising is what puts it under the pointer, and
+        // activating would additionally give it the focus, which costs twice.
+        //
+        // It takes the focus away from whatever was being typed in, which is
+        // the thing this extension spends most of its effort preventing
+        // elsewhere. And mutter pings a window when it focuses it, to see
+        // whether it is alive; Wine's tray window does not answer, so a
+        // "“explorer.exe” is not responding" dialog appears over a window
+        // that is working perfectly well.
         tray.raise();
-        tray.activate(global.get_current_time());
         if (this._config.log) {
             console.log(`${TAG} tray at ${rect.x},${rect.y} ${rect.width}x` +
                 `${rect.height}, pointer to ${target[0]},${target[1]}`);
