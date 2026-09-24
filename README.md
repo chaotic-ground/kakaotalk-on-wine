@@ -115,20 +115,22 @@ nobody repeats the search:
   distance is all it sends. Upstream knows:
   [56043](https://bugs.winehq.org/show_bug.cgi?id=56043) and
   [57709](https://bugs.winehq.org/show_bug.cgi?id=57709), both open.
-- **The tray menu** produces no window at all when right-clicked, so there is
-  nothing misplaced to correct. Left-click, which restores the window, works.
-  Also the Wayland driver's doing -- under X11 the tray is a real XEmbed icon
-  with a working menu, which is what the AppIndicator extension picks up.
+- **The tray menu** produced no window at all when right-clicked. That was a
+  Wine bug and is patched now -- see `patches/`, 0005. The menu is what the
+  panel indicator's right-click opens: KakaoTalk's own, put up by the app,
+  rather than an imitation that would have to be kept in step with it. It
+  lands where the compositor puts it and not at the pointer, because a
+  Wayland client cannot place its own toplevel.
 - **Alt-tab** says "Bottles" because GNOME trusts a window's sandbox identity
   over the WM_CLASS it claims, deliberately, so a sandboxed app cannot pose
   as another. `flatpak run` puts every process in
   `app-flatpak-com.usebottles.bottles-*.scope`, and the desktop entry's
   correct StartupWMClass loses to it.
 
-Quit and restart live on the panel indicator's right-click menu and on the
-app icon's, rather than the tray, since the tray's menu does not open. The
-indicator is the one to reach for -- it is already in the panel, beside the
-thing it acts on. Clicking the app icon while it is
+Quit and restart live on the app icon's right-click, as desktop actions. The
+panel indicator's right-click is KakaoTalk's own menu, which has its own
+quit; a restart is not something the app offers, and it is what clears Wine's
+stale record of the monitors. Clicking the app icon while it is
 already running does nothing on purpose: passing that through starts a second
 client in the same prefix and single-instance KakaoTalk loses both. That also matters after a display
 change: Wine keeps a stale record of the monitors, which the restart clears.

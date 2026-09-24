@@ -129,6 +129,12 @@ const POPUP_TITLE = 'KakaoTalkShadowWnd';
 // thing itself. See _findMainWindow.
 const MAIN_MIN_HEIGHT = 240;
 
+// How long after asking for the app's menu a new window is taken to be that
+// menu. It arrives about a second later; the rest is slack. Nothing here
+// needs to be right about a window that arrives afterwards, because by then
+// the menu holds the focus and no second focus event comes.
+const MENU_GRACE_US = 5 * 1000 * 1000;
+
 // A restart destroys the tray window on its way, which would look exactly
 // like the thing being recovered from. Long enough to cover a restart, short
 // enough that a second accident a minute later is still caught.
@@ -183,19 +189,16 @@ class TrayIndicator extends PanelMenu.Button {
     // installed by hand -- a shell extension lives where no sandboxed app can
     // put it -- so once it is here it can offer the rest rather than leaving
     // someone to find a release page.
+    //
+    // Only that, now. Where this used to carry an imitation of KakaoTalk's
+    // tray menu, a right-click asks the app for the real one -- see
+    // vfunc_event -- which is always what the app actually has and does what
+    // it says. Restart and quit moved to the app icon's right-click, which
+    // is where the desktop file puts them.
     _rebuild() {
         this.menu.removeAll();
-        if (this._owner.appInstalled()) {
-            // The same two actions the app icon's right-click offers, for the
-            // same reason: KakaoTalk's own way out is its tray menu, and that
-            // menu does not open under Wine's Wayland driver. The app icon is
-            // in the grid or the dash; this is already in the panel, next to
-            // the thing it acts on.
-            this.menu.addAction('다시 시작', () => this._owner.restart());
-            this.menu.addAction('종료', () => this._owner.quit());
-        } else {
+        if (!this._owner.appInstalled())
             this.menu.addAction('카카오톡 설치', () => this._owner.install());
-        }
     }
 
     // Not a button-press-event handler, which is what this was before the
@@ -212,7 +215,19 @@ class TrayIndicator extends PanelMenu.Button {
 
         if (type === Clutter.EventType.BUTTON_PRESS &&
             event.get_button() === Clutter.BUTTON_SECONDARY) {
-            this.menu.toggle();
+            // The app's own menu, not one of ours. It is put up by KakaoTalk
+            // at the pointer, which is right here, and it carries whatever
+            // the app has today rather than a copy that would drift.
+            //
+            // With nothing installed there is no app to ask, and then the
+            // only useful thing is the offer to install one -- which is what
+            // this menu is left holding.
+            if (this._owner.appInstalled()) {
+                this.menu.close();
+                this._owner.askMenu();
+            } else {
+                this.menu.toggle();
+            }
             return Clutter.EVENT_STOP;
         }
 
@@ -241,6 +256,7 @@ export default class KakaoTalkPopup {
         // to leave two recoveries firing for one closed tray.
         this._tray = [];
         this._hidden = new Set();
+        this._menuUntil = 0;
         this._installed = undefined;
         this._config = DEFAULT_CONFIG;
         this._configPath = GLib.build_filenamev(
@@ -347,6 +363,10 @@ export default class KakaoTalkPopup {
                 this._lastFocused = focused;
                 return;
             }
+            // The menu we just asked for. It is meant to have the focus --
+            // that is what keeps it open -- so leave it alone.
+            if (this._expectingMenu())
+                return;
             const previous = this._lastFocused;
             if (!previous || previous.get_compositor_private() === null)
                 return;
@@ -741,6 +761,13 @@ export default class KakaoTalkPopup {
     }
 
     _handle(window) {
+        // The first frame can arrive after disable(): the handler that calls
+        // this is connected to an actor, which outlives us, and there is a
+        // window's worth of time between creating it and drawing it. Then
+        // every field here is null and the shell logs a TypeError for a
+        // window nobody is watching any more.
+        if (!this._pids) return;
+
         const wmClass = window.get_wm_class();
         const pid = window.get_pid();
         if (OWNER_CLASSES.includes(wmClass) && pid > 0)
@@ -768,6 +795,12 @@ export default class KakaoTalkPopup {
             this._apply(rule, window);
             return;
         }
+
+        // The menu we just asked for is not part of any notification, and
+        // putting it in the corner with one would be a poor way to answer a
+        // right-click.
+        if (this._expectingMenu() && this._isPopupWindow(window))
+            return;
 
         // No rule of its own, which does not mean it should be left alone.
         // See _joinGroup.
@@ -963,27 +996,6 @@ export default class KakaoTalkPopup {
         });
     }
 
-    // Behind the indicator's right-click menu. Both go through the same
-    // helper the app icon's actions use, so there is one definition of what
-    // restarting means and not two that drift.
-    restart() {
-        this._suppressRecovery();
-        this._runHelper();
-    }
-
-    quit() {
-        this._suppressRecovery();
-        this._runHelper('--quit');
-    }
-
-    // Stopping the app destroys the tray window, and a destroyed tray window
-    // is exactly what _watchTray exists to undo. Asked for it, though, so
-    // there is nothing to undo -- claim the cooldown before the window goes,
-    // and the recovery that would otherwise chase it stands down.
-    _suppressRecovery() {
-        this._lastRecover = GLib.get_monotonic_time();
-    }
-
     // A word into the file the flatpak's launcher watches, and the instance
     // already running the client does the rest.
     //
@@ -996,6 +1008,25 @@ export default class KakaoTalkPopup {
     //
     // A plain file, so this never blocks. A fifo would be tidier and would
     // stop the whole shell the first time nothing was listening.
+    // KakaoTalk's own tray menu, asked for rather than imitated. See
+    // serve_control in flatpak/kakaotalk and flatpak/kakaoshow.c.
+    askMenu() {
+        if (this._config.log)
+            console.log(`${TAG} asking the app for its menu`);
+        // A Win32 menu closes the moment it loses activation, and the window
+        // it arrives in is the same shape as a message popup: owned by the
+        // app, untitled, and short. So the popup handling would take the
+        // focus straight back off it and the menu would be gone before it
+        // was seen. Nothing about the window says which it is -- but we
+        // asked for this one, so remember that we did.
+        this._menuUntil = GLib.get_monotonic_time() + MENU_GRACE_US;
+        this._askApp('menu');
+    }
+
+    _expectingMenu() {
+        return GLib.get_monotonic_time() < this._menuUntil;
+    }
+
     _askApp(word) {
         const path = GLib.build_filenamev(
             [GLib.get_home_dir(), '.var', 'app', APP_ID, 'data', 'control']);

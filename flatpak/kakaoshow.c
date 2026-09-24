@@ -16,6 +16,8 @@
  * being needed at all.
  *
  *   kakaoshow          post it
+ *   kakaoshow --menu   right-click the tray icon, which makes the app put up
+ *                      its own menu at the pointer
  *   kakaoshow --list   print every top-level window of the app, to find out
  *                      what to post it to
  *
@@ -38,6 +40,31 @@
 
 static BOOL listing;
 static HWND found;
+static HWND tray_icon;
+
+/* Wine's own explorer.exe owns the tray icon, as a __wine_tray_icon window,
+ * and turns a right-click on it into the WM_CONTEXTMENU the app acts on. So
+ * the menu can be asked for from here, and it is the app's real menu rather
+ * than an imitation that would have to be kept in step with it.
+ *
+ * Recursive, because the icon window is a child of the tray and EnumWindows
+ * only walks the top level.
+ *
+ * Posted and not sent: TrackPopupMenu runs a modal loop, and a SendMessage
+ * would wait for a menu that is dismissed by a hand, not by us. */
+static BOOL CALLBACK find_tray( HWND hwnd, LPARAM param )
+{
+    WCHAR cls[64] = {0};
+
+    GetClassNameW( hwnd, cls, 64 );
+    if (!lstrcmpW( cls, L"__wine_tray_icon" ))
+    {
+        tray_icon = hwnd;
+        return FALSE;
+    }
+    EnumChildWindows( hwnd, find_tray, 0 );
+    return !tray_icon;
+}
 
 static BOOL is_kakaotalk( HWND hwnd )
 {
@@ -92,6 +119,19 @@ static BOOL CALLBACK visit( HWND hwnd, LPARAM param )
 
 int main( int argc, char **argv )
 {
+    if (argc > 1 && !strcmp( argv[1], "--menu" ))
+    {
+        EnumWindows( find_tray, 0 );
+        if (!tray_icon)
+        {
+            fprintf( stderr, "no tray icon window found\n" );
+            return 1;
+        }
+        PostMessageW( tray_icon, WM_RBUTTONDOWN, 0, 0 );
+        PostMessageW( tray_icon, WM_RBUTTONUP, 0, 0 );
+        return 0;
+    }
+
     listing = argc > 1 && !strcmp( argv[1], "--list" );
     EnumWindows( visit, 0 );
     if (listing) return 0;

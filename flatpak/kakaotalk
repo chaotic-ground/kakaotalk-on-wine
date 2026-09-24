@@ -66,8 +66,10 @@ case ${1-} in
   --setup) mode=setup ;;
   --quit) mode=quit ;;
   --show) mode=show ;;
+  --menu) mode=menu ;;
+  --restart) mode=restart ;;
   "") ;;
-  *) echo "usage: ${0##*/} [--reinstall|--setup|--quit|--show]" >&2; exit 2 ;;
+  *) echo "usage: ${0##*/} [--reinstall|--setup|--quit|--show|--menu|--restart]" >&2; exit 2 ;;
 esac
 
 step() { echo "==> $*"; }
@@ -80,9 +82,25 @@ step() { echo "==> $*"; }
 # bin/kakaotalk-restart write it directly and never start an instance at all.
 # These two exist so that `flatpak run <app> --show` does what it looks like
 # it does.
-if [[ $mode == show ]] || [[ $mode == quit ]]; then
+if [[ $mode == show ]] || [[ $mode == quit ]] || [[ $mode == menu ]]; then
   printf '%s\n' "$mode" >"$CONTROL"
   exit 0
+fi
+
+# Ask the running client to go, wait for it, then carry on and start one.
+# This instance becomes the new client, which is what makes a restart
+# possible from in here at all: nothing inside a sandbox can start something
+# outside it, but a desktop action is already a fresh `flatpak run`.
+if [[ $mode == restart ]]; then
+  printf 'quit\n' >"$CONTROL"
+  for _ in {1..30}; do
+    [[ -f $CONTROL ]] || break
+    sleep 1
+  done
+  # Wine's record of the monitors goes stale when a display comes or goes,
+  # and a stale one is what throws the app's own popups across the screen.
+  # Restarting is when someone would think to ask, so do it here.
+  sleep 3
 fi
 
 # Every wine call is capped. One of them wedging holds the wineserver, and
@@ -327,6 +345,11 @@ serve_control() {
       # posts itself one message and then calls ShowWindow. kakaoshow sends
       # that message. See flatpak/kakaoshow.c.
       show) timeout 60 "$WINE" "$SHARE/kakaoshow.exe" >/dev/null 2>&1 || true ;;
+      # KakaoTalk's own tray menu, put up by the app itself rather than
+      # imitated out here, so its items are whatever the app has today. It
+      # appears at the pointer, which is where the indicator that asked for
+      # it is. See flatpak/kakaoshow.c.
+      menu) timeout 60 "$WINE" "$SHARE/kakaoshow.exe" --menu >/dev/null 2>&1 || true ;;
       # Asking, and only asking. taskkill without /f sends WM_CLOSE, which is
       # what a Windows app expects and what gives KakaoTalk the chance to
       # write its session out; killing it outright costs a login that has to

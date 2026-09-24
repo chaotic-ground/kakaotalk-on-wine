@@ -12,3 +12,16 @@ Categories=Network;InstantMessaging;
 # to an application, and draws the generic placeholder in alt-tab and the
 # overview.
 StartupWMClass=kakaotalk.exe
+# The app icon's right-click. KakaoTalk's own menu has 종료 and no restart,
+# and a restart is what clears Wine's stale record of the monitors after a
+# display comes or goes -- so it lives here, where the panel indicator's
+# right-click used to put it before that opened the app's real menu instead.
+Actions=Restart;Quit;
+
+[Desktop Action Restart]
+Name=다시 시작
+Exec=kakaotalk --restart
+
+[Desktop Action Quit]
+Name=종료
+Exec=kakaotalk --quit

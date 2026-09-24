@@ -106,7 +106,7 @@ modules:
       - type: archive
         strip-components: 0
         url: https://github.com/chaotic-ground/kakaotalk-on-wine/releases/download/wine-11.18-emoji/wine-11.18-emoji-wow64-x86_64.tar.xz
-        sha256: d28ddaed70e45562d7d56be662edf9bf3a8a6d765609db102019da1aedab4ac8
+        sha256: 3ab4b1857b1c78a7a97e5e62b9fdc6715ca056ab5fdbfe9562b55d493a8365f3
 
   # The two faces the prefix cannot do without. Bundled rather than taken
   # from the host: a prefix with no Korean font draws every Hangul glyph as a
@@ -145,7 +145,7 @@ modules:
       # and published alongside it. Source is flatpak/kakaoshow.c here.
       - type: file
         url: https://github.com/chaotic-ground/kakaotalk-on-wine/releases/download/wine-11.18-emoji/kakaoshow.exe
-        sha256: 548210a5a9d813d5341272c663a7cddc11b512eed7193e6d62727e1b81610847
+        sha256: 7a275ac8cb7b3db8f77ee2f6c3eb0c3232153eab4ec30c05452c9ecd3b4993e3
       - type: file
         path: ../config/kakaotalk-korean.reg
       - type: file
