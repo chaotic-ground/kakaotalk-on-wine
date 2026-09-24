@@ -1,25 +1,24 @@
-# KakaoTalk, in Korean, with the Wine it needs.
+# 한국어 카카오톡과, 그것이 필요로 하는 Wine.
 #
-# The app id has an underscore where the GitHub organisation has a hyphen.
-# Flatpak ids follow D-Bus naming and a hyphen is not allowed in an element.
+# 앱 id는 GitHub 조직 이름의 하이픈 자리에 밑줄이 있다. flatpak id는 D-Bus
+# 이름 규칙을 따르고 거기서는 요소 안에 하이픈을 못 쓴다.
 #
-# Wine arrives as a built tarball rather than being compiled here. Wine's PE
-# modules need a cross compiler and the freedesktop SDK has no mingw
-# extension, so the build happens in a container -- see patches/README.md --
-# and its result is published as a release asset. The patch and the upstream
-# tarball it applies to are both in this repository, which is what makes that
-# binary accountable and satisfies Wine's licence.
+# Wine은 여기서 컴파일하지 않고 빌드된 tarball로 온다. Wine의 PE 모듈에는
+# 크로스 컴파일러가 필요한데 freedesktop SDK에는 mingw 확장이 없다. 그래서
+# 빌드는 컨테이너에서 하고(patches/README.md), 결과를 릴리스 자산으로
+# 올린다. 패치와 그것이 적용되는 업스트림 tarball이 둘 다 이 저장소에 있고,
+# 그것이 저 바이너리를 설명 가능하게 만들며 Wine의 라이선스도 만족시킨다.
 #
-# It is a WoW64 build, 32-bit and 64-bit both, although KakaoTalk itself is
-# 64-bit. The installer is not: Kakao ships the 64-bit client inside a 32-bit
-# NSIS installer, and a Wine with no 32-bit side stops at
+# 카카오톡 자체는 64비트지만 WoW64 빌드, 즉 32비트와 64비트 둘 다다.
+# 설치 파일이 64비트가 아니기 때문이다. 카카오는 64비트 클라이언트를 32비트
+# NSIS 설치 파일 안에 넣어 배포하고, 32비트 쪽이 없는 Wine은 여기서 멈춘다.
 #
 #   wine: failed to load L"C:\\windows\\syswow64\\ntdll.dll" error c0000135
 #
-# KakaoTalk itself is not here and cannot be: it is Kakao's to distribute.
-# The launcher fetches the installer on first run.
+# 카카오톡 자체는 여기 없고 있을 수도 없다. 카카오가 배포할 것이다. 런처가
+# 첫 실행 때 설치 파일을 받아온다.
 #
-# Building it, and then the bundle that goes on a release:
+# 빌드하고, 릴리스에 올릴 번들까지 만들려면:
 #
 #   flatpak run org.flatpak.Builder --user --install --force-clean \
 #     build-dir io.github.chaotic_ground.KakaoTalk.yml
@@ -27,69 +26,66 @@
 #     build-dir io.github.chaotic_ground.KakaoTalk.yml
 #   flatpak build-bundle repo kakaotalk.flatpak io.github.chaotic_ground.KakaoTalk
 #
-# Two builds and not one, and that is the trap: --install does not write
-# --repo, and --repo does not install. A repo left over from an earlier build
-# says nothing about it -- build-bundle succeeds and hands back seventy
-# megabytes of the version before last. Check what came out rather than
-# trusting it:
+# 한 번이 아니라 두 번 빌드하는 것이 함정이다. --install은 --repo에 쓰지
+# 않고, --repo는 설치하지 않는다. 이전 빌드에서 남은 repo는 그 사실을
+# 알려주지 않는다. build-bundle은 성공하고 지지난 버전 70메가를 돌려준다.
+# 믿지 말고 나온 것을 확인하라.
 #
-#   grep -c <something you just added> build-dir/files/bin/kakaotalk
+#   grep -c <방금 넣은 것> build-dir/files/bin/kakaotalk
 #
-# It is the same shape as the module cache described in patches/README.md:
-# flatpak-builder is happy to succeed with contents nobody asked for.
+# patches/README.md에 적어둔 모듈 캐시와 같은 모양이다. flatpak-builder는
+# 아무도 요청하지 않은 내용으로 기꺼이 성공한다.
 app-id: io.github.chaotic_ground.KakaoTalk
 runtime: org.freedesktop.Platform
 runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
 command: kakaotalk
-# The locale this builds stays in the app. Left to itself flatpak-builder
-# moves it into a .Locale extension, and a bundle carries no extensions, so
-# what ships is a symlink pointing at nothing.
+# 여기서 만든 로캘을 앱 안에 둔다. 그냥 두면 flatpak-builder가 .Locale
+# 확장으로 옮기는데, 번들은 확장을 담지 않으므로 배포되는 것은 아무것도
+# 가리키지 않는 심볼릭 링크가 된다.
 separate-locales: false
 
 finish-args:
   - --socket=wayland
-  # XWayland as well, because Wine's Wayland driver is chosen at runtime and
-  # a prefix can be told to use X11 instead -- see WINE_GRAPHICS.
+  # XWayland도 함께. Wine의 Wayland 드라이버는 실행 중에 정해지고,
+  # 프리픽스에 X11을 쓰라고 할 수도 있다. WINE_GRAPHICS를 보라.
   - --socket=fallback-x11
   - --share=ipc
-  # Without these no 32-bit program runs at all, and the installer is one.
-  # Flatpak's seccomp filter blocks what WoW64 needs to put the CPU into
-  # 32-bit mode, so a 32-bit PE dies before it starts and wine reports it as
-  # "Application could not be started" from start.exe, which sounds like a
-  # missing file and is not.
+  # 이게 없으면 32비트 프로그램이 아예 안 돌고, 설치 파일이 그중 하나다.
+  # flatpak의 seccomp 필터가 WoW64가 CPU를 32비트 모드로 넣을 때 쓰는 것을
+  # 막아서, 32비트 PE는 시작하기도 전에 죽는다. wine은 그걸 start.exe의
+  # "Application could not be started"로 보고하는데, 파일이 없다는 말처럼
+  # 들리지만 그게 아니다.
   - --allow=multiarch
   - --allow=devel
   - --device=dri
   - --socket=pulseaudio
-  # The installer comes from Kakao's CDN on first run, and the app is a
-  # messenger.
+  # 첫 실행 때 설치 파일이 카카오 CDN에서 오고, 앱 자체가 메신저다.
   - --share=network
-  # Sending and receiving files is most of what the app is for, so give it
-  # the one directory that is for exactly that rather than all of $HOME.
+  # 파일을 주고받는 것이 이 앱의 상당 부분이다. $HOME 전체가 아니라 바로
+  # 그 용도인 디렉터리 하나를 준다.
   - --filesystem=xdg-download
-  # For one file: the icon, which the launcher takes out of the installed
-  # client and writes where the icon theme looks. It cannot go in /app/share
-  # like an ordinary app's, because that is read-only long before there is a
-  # client to take an icon from, and it cannot come from Wine either --
-  # winewayland sets window icons over xdg-toplevel-icon-v1 and mutter does
-  # not implement it. See install_icon in the launcher.
+  # 파일 하나 때문이다. 런처가 설치된 클라이언트에서 꺼내 아이콘 테마가
+  # 보는 자리에 쓰는 아이콘. 보통 앱처럼 /app/share에 둘 수 없는 이유는,
+  # 거기는 아이콘을 꺼낼 클라이언트가 생기기 한참 전에 읽기 전용이 되기
+  # 때문이다. Wine에서 받을 수도 없다. winewayland는 창 아이콘을
+  # xdg-toplevel-icon-v1로 설정하는데 mutter가 그걸 구현하지 않았다.
+  # 런처의 install_icon을 보라.
   - --filesystem=xdg-data/icons:create
-  # The host's fonts arrive at /run/host/fonts without asking, and the two
-  # faces this cannot do without are bundled below, so there is nothing to
-  # request here. /usr is reserved by flatpak and asking for it is refused
-  # out loud on every launch.
+  # 글꼴은 요청할 것이 없다. 호스트의 것은 묻지 않아도 /run/host/fonts로
+  # 오고, 없으면 안 되는 두 face는 아래에 번들로 넣는다. /usr은 flatpak이
+  # 예약해둔 곳이라 요청하면 실행할 때마다 큰 소리로 거부당한다.
   - --env=WINEDEBUG=-all
-  # Set here rather than in the launcher so the shell that runs it starts
-  # with it. Exported from inside, the locale still reaches wine but bash has
-  # already fixed its own and complains about it on every launch.
+  # 런처가 아니라 여기서 정한다. 런처를 돌리는 셸이 처음부터 이걸 갖고
+  # 시작하도록. 안에서 export하면 로캘이 wine에는 닿지만 bash는 이미 자기
+  # 것을 정해버린 뒤라 실행할 때마다 불평한다.
   - --env=LOCPATH=/app/lib/locale
 
 modules:
-  # ko_KR.UTF-8, built in. The runtime's Locale extension carries only the
-  # host's language and there is no per-app knob for that -- extra-languages
-  # is a global setting on the host, which is exactly the dependency this is
-  # meant to remove. localedef and the ko_KR source are both in the SDK.
+  # ko_KR.UTF-8을 앱 안에 빌드해 넣는다. 런타임의 Locale 확장은 호스트의
+  # 언어만 담고, 앱별로 조절할 손잡이가 없다. extra-languages는 호스트의
+  # 전역 설정인데, 그게 바로 이 패키지가 없애려는 의존이다. localedef도
+  # ko_KR 원본도 SDK에 있다.
   - name: locale
     buildsystem: simple
     build-commands:
@@ -108,9 +104,9 @@ modules:
         url: https://github.com/chaotic-ground/kakaotalk-on-wine/releases/download/wine-11.18-emoji/wine-11.18-emoji-wow64-x86_64.tar.xz
         sha256: 32b90273844aecbd4af67a3d3c6f06f0426d7b2fca39e02d447c2dc8bd5132c9
 
-  # The two faces the prefix cannot do without. Bundled rather than taken
-  # from the host: a prefix with no Korean font draws every Hangul glyph as a
-  # box, and the emoji face is what the font link points at.
+  # 프리픽스가 없으면 안 되는 두 face. 호스트에서 가져오지 않고 번들로
+  # 넣는다. 한국어 글꼴이 없는 프리픽스는 한글 글리프를 전부 네모로 그리고,
+  # 이모지 face는 폰트 링크가 가리키는 대상이다.
   - name: fonts
     buildsystem: simple
     build-commands:
@@ -134,15 +130,15 @@ modules:
       - install -Dm755 kakaotalk /app/bin/kakaotalk
       - install -Dm644 kakaotalk-korean.reg /app/share/kakaotalk/kakaotalk-korean.reg
       - install -Dm755 extract-icon.py /app/share/kakaotalk/extract-icon.py
-      # The name has to be the app id, or flatpak will not export it.
+      # 이름이 앱 id여야 한다. 아니면 flatpak이 내보내지 않는다.
       - install -Dm644 io.github.chaotic_ground.KakaoTalk.desktop
         /app/share/applications/io.github.chaotic_ground.KakaoTalk.desktop
       - install -Dm644 kakaoshow.exe /app/share/kakaotalk/kakaoshow.exe
     sources:
       - type: file
         path: kakaotalk
-      # Built in the container with the rest -- the SDK has no PE compiler --
-      # and published alongside it. Source is flatpak/kakaoshow.c here.
+      # 나머지와 함께 컨테이너에서 빌드한다. SDK에는 PE 컴파일러가 없다.
+      # 같이 릴리스에 올린다. 원본은 여기 flatpak/kakaoshow.c다.
       - type: file
         url: https://github.com/chaotic-ground/kakaotalk-on-wine/releases/download/wine-11.18-emoji/kakaoshow.exe
         sha256: 19a78a7e24e333531a1efadcb434f6926ad263e49d11dc9d5427a9a868569b34

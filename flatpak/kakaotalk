@@ -1,58 +1,56 @@
 #!/bin/bash
-# Set the prefix up if it is not, then run KakaoTalk.
+# 프리픽스가 없으면 만들고, 카카오톡을 실행한다.
 #
-# Four things have to be Korean before the installer runs, and each fails
-# quietly and differently when it is missing: the runtime locale, LC_ALL for
-# wine, the Windows UI language in the registry, and a Korean font inside the
-# prefix. KakaoTalk reads its UI language once, while installing, so a client
-# installed against an English prefix stays English for good.
+# 설치 파일이 돌기 전에 네 가지가 한국어여야 하고, 빠지면 각각 다르게
+# 조용히 실패한다. 런타임 로캘, wine을 위한 LC_ALL, 레지스트리의 윈도우 UI
+# 언어, 그리고 프리픽스 안의 한국어 글꼴이다. 카카오톡은 설치하면서 UI
+# 언어를 한 번만 읽으므로, 영어 프리픽스에 설치된 클라이언트는 영영
+# 영어다.
 #
-#   kakaotalk              set up if needed, then run
-#   kakaotalk --reinstall  install the client again over the top
-#   kakaotalk --setup      set up and stop, without running
-#   kakaotalk --restart    stop the running client and take its place
-#   kakaotalk --quit       ask the running client to close
-#   kakaotalk --show       bring the hidden window back
-#   kakaotalk --menu       put up the app's own tray menu
-#   kakaotalk --menu-close dismiss it
+#   kakaotalk              필요하면 준비하고 실행
+#   kakaotalk --reinstall  클라이언트를 그 위에 다시 설치
+#   kakaotalk --setup      준비만 하고 실행은 안 함
+#   kakaotalk --restart    돌고 있는 클라이언트를 끄고 그 자리를 차지
+#   kakaotalk --quit       돌고 있는 클라이언트에 닫으라고 요청
+#   kakaotalk --show       숨은 창을 불러옴
+#   kakaotalk --menu       앱 자신의 트레이 메뉴를 띄움
+#   kakaotalk --menu-close 그걸 닫음
 set -euo pipefail
 IFS=$'\n\t'
 
-# Not $HOME. Inside the sandbox $HOME is the real path but almost none of it
-# is there, and what is written to it does not survive. The app's own data
-# directory is what persists, and XDG_DATA_HOME points at it.
+# $HOME이 아니다. 샌드박스 안에서 $HOME은 진짜 경로지만 그 안에 있는 것은
+# 거의 없고, 거기 쓴 것은 살아남지 않는다. 남는 것은 앱 자신의 데이터
+# 디렉터리이고 XDG_DATA_HOME이 그걸 가리킨다.
 readonly PREFIX="${XDG_DATA_HOME:-$HOME/.local/share}/prefix"
 readonly WINE=/app/wine/bin/wine
 readonly SERVER=/app/wine/bin/wineserver
 readonly SHARE=/app/share/kakaotalk
 readonly CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/kakaotalk"
-# Where the outside asks for something to happen in here. See serve_control.
+# 바깥이 여기서 뭘 해달라고 말하는 자리. serve_control을 보라.
 readonly CONTROL="${XDG_DATA_HOME:-$HOME/.local/share}/control"
 readonly APP_ID=io.github.chaotic_ground.KakaoTalk
 
-# The 64-bit client. Kakao publishes three Windows builds; this is the one
-# the download page labels 기존버전, and the one every search result hands you
-# instead is the 32-bit build at app-pc.kakaocdn.net/talk/win32/.
+# 64비트 클라이언트. 카카오는 윈도우용을 셋 배포하는데, 이것이 다운로드
+# 페이지가 기존버전이라고 적어둔 것이다. 검색으로 나오는
+# app-pc.kakaocdn.net/talk/win32/는 32비트다.
 readonly INSTALLER_URL=https://lk.kakaocdn.net/talkpc/talk/win32/x64/KakaoTalk_Setup.exe
 readonly INSTALLER="$CACHE/KakaoTalk_Setup_x64.exe"
 readonly EXE="$PREFIX/drive_c/Program Files/Kakao/KakaoTalk/KakaoTalk.exe"
 
-# Unset, and deliberately. Wine's own default is 96 and the scale of the
-# screen is the compositor's business, not this package's -- winewayland is a
-# native Wayland client and is told. A DPI worth pinning is one carried over
-# from the XWayland path, where wine is handed the panel's real pixels and a
-# 96 DPI prefix comes out tiny; that reasoning does not hold here. Set
-# KAKAOTALK_DPI to override, and note that the tray icon size hangs off the
-# same number.
+# 일부러 비워둔다. Wine의 기본값은 96이고 화면 배율은 이 패키지가 아니라
+# 컴포지터의 일이다. winewayland는 네이티브 Wayland 클라이언트라 배율을
+# 통보받는다. DPI를 박아둘 만한 경우는 XWayland 경로에서 넘어온 것인데,
+# 거기서는 wine이 패널의 실제 픽셀을 받아서 96 DPI 프리픽스가 아주 작게
+# 나온다. 여기서는 그 이유가 성립하지 않는다. KAKAOTALK_DPI로 덮을 수
+# 있고, 트레이 아이콘 크기도 같은 숫자에 달려 있다.
 readonly DPI=${KAKAOTALK_DPI:-}
 readonly GRAPHICS=${WINE_GRAPHICS:-wayland}
 
 export WINEPREFIX="$PREFIX"
-# LOCPATH comes from the manifest, so that the shell running this starts with
-# it. ko_KR.UTF-8 is built into the app because the runtime carries only the
-# host's own language; without it setlocale fails and wine drops back to C
-# without saying so, which is the quiet failure that makes everything else
-# look broken.
+# LOCPATH는 매니페스트에서 온다. 이 스크립트를 돌리는 셸이 처음부터 그걸
+# 갖고 시작하도록. ko_KR.UTF-8을 앱 안에 빌드해 넣는 이유는 런타임이 호스트
+# 자신의 언어만 담고 있기 때문이다. 없으면 setlocale이 실패하고 wine은 말
+# 없이 C로 떨어진다. 나머지 전부가 망가져 보이게 만드는 조용한 실패다.
 export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-mscoree,mshtml=}"
 export LC_ALL=ko_KR.UTF-8
 
@@ -72,43 +70,42 @@ esac
 
 step() { echo "==> $*"; }
 
-# Neither of these runs wine. They write a word into a file, and the instance
-# that owns the running client picks it up -- see serve_control for why that
-# indirection has to be there.
+# 둘 다 wine을 돌리지 않는다. 파일에 단어를 쓰고, 돌고 있는 클라이언트를
+# 들고 있는 인스턴스가 그걸 집어간다. 그 우회가 왜 필요한지는
+# serve_control에 있다.
 #
-# The file is on the host filesystem, so the GNOME extension and
-# bin/kakaotalk-restart write it directly and never start an instance at all.
-# These two exist so that `flatpak run <app> --show` does what it looks like
-# it does.
+# 그 파일은 호스트 파일 시스템에 있어서 GNOME 확장과 bin/kakaotalk-restart는
+# 직접 쓰고 인스턴스를 아예 띄우지 않는다. 이 두 모드는
+# `flatpak run <app> --show`가 보이는 대로 동작하라고 있다.
 if [[ $mode == show ]] || [[ $mode == quit ]] || [[ $mode == menu ]] ||
    [[ $mode == menu-close ]]; then
   printf '%s\n' "$mode" >"$CONTROL"
   exit 0
 fi
 
-# Ask the running client to go, wait for it, then carry on and start one.
-# This instance becomes the new client, which is what makes a restart
-# possible from in here at all: nothing inside a sandbox can start something
-# outside it, but a desktop action is already a fresh `flatpak run`.
+# 돌고 있는 클라이언트에 가라고 하고, 기다리고, 그대로 이어서 하나를
+# 띄운다. 이 인스턴스가 새 클라이언트가 된다. 그게 여기서 재시작이
+# 가능한 이유다. 샌드박스 안에서는 바깥의 무언가를 시작할 수 없지만,
+# desktop 액션은 이미 새 `flatpak run`이다.
 if [[ $mode == restart ]]; then
   printf 'quit\n' >"$CONTROL"
   for _ in {1..30}; do
     [[ -f $CONTROL ]] || break
     sleep 1
   done
-  # Wine's record of the monitors goes stale when a display comes or goes,
-  # and a stale one is what throws the app's own popups across the screen.
-  # Restarting is when someone would think to ask, so do it here.
+  # 디스플레이가 붙거나 빠지면 Wine의 모니터 기록이 낡고, 낡은 기록이 앱의
+  # 팝업을 화면 아무 데나 던진다. 사람이 그걸 떠올릴 만한 때가 재시작이니
+  # 여기서 한다.
   sleep 3
 fi
 
-# Every wine call is capped. One of them wedging holds the wineserver, and
-# then nothing can start at all.
+# wine 호출마다 상한을 둔다. 하나가 박히면 wineserver를 붙잡고, 그러면
+# 아무것도 시작하지 못한다.
 wine() { timeout "${WINE_TIMEOUT:-300}" "$WINE" "$@"; }
 
-# reg.exe reads a BOM-less file as CP949 whatever the header claims, so
-# anything with Korean in it has to be UTF-16LE with a BOM. That is why these
-# go through a file rather than through reg.exe's argv.
+# reg.exe는 BOM 없는 파일을 헤더가 뭐라고 하든 CP949로 읽는다. 그래서
+# 한국어가 든 것은 BOM 붙은 UTF-16LE여야 한다. 이것들이 reg.exe의 argv가
+# 아니라 파일을 거치는 이유다.
 import_reg() {
   local file=$1
   wine reg import "$(printf 'Z:%s' "${file//\//\\}")" >/dev/null 2>&1
@@ -126,8 +123,8 @@ install_fonts() {
   local dest="$PREFIX/drive_c/windows/Fonts"
   install -d "$dest"
   install -m644 -t "$dest" "$SHARE"/fonts/*.ttf
-  # Dropping the files in is not enough: wine declined to pick them up by
-  # itself, so name them outright.
+  # 파일만 넣어두는 것으로는 부족하다. wine이 스스로 집어가기를 거부해서
+  # 이름을 직접 적어준다.
   local key='HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Fonts'
   wine reg add "$key" /v 'NanumGothic (TrueType)' /d NanumGothic.ttf /t REG_SZ /f >/dev/null 2>&1
   wine reg add "$key" /v 'NanumGothic Bold (TrueType)' /d NanumGothicBold.ttf /t REG_SZ /f >/dev/null 2>&1
@@ -139,9 +136,9 @@ apply_korean() {
   import_reg "$SHARE/kakaotalk-korean.reg"
 }
 
-# KakaoTalk asks for its fonts by Korean face name -- its own skin files name
-# 맑은 고딕 throughout -- so Latin-named substitutions never match and menus
-# and tooltips come out as boxes.
+# 카카오톡은 글꼴을 한국어 face 이름으로 요청한다. 자기 스킨 파일이
+# 처음부터 끝까지 맑은 고딕이라고 쓴다. 그래서 라틴 이름으로 건 치환은
+# 절대 맞지 않고, 메뉴와 툴팁이 네모로 나온다.
 substitute_korean_fonts() {
   step "substituting the Korean face names"
   local staged="$CACHE/korean-fonts.reg"
@@ -162,10 +159,10 @@ substitute_korean_fonts() {
   rm -f "$staged"
 }
 
-# The fonts wine draws its own chrome with are named in LOGFONT blobs under
-# WindowMetrics and they all say Tahoma. Substitution cannot reach them --
-# wine ships its own Tahoma, so the face is not missing and nothing stands in
-# -- so the face inside the blob is rewritten instead.
+# wine이 자기 창 장식을 그리는 글꼴은 WindowMetrics 아래 LOGFONT 덩어리에
+# 이름이 박혀 있고, 전부 Tahoma라고 쓰여 있다. 치환은 거기 닿지 못한다.
+# wine이 자기 Tahoma를 들고 있어서 face가 없는 게 아니고, 없어야 치환이
+# 끼어든다. 그래서 덩어리 안의 face 이름을 직접 바꿔 쓴다.
 rename_chrome_fonts() {
   step "pointing the window metrics fonts at NanumGothic"
   local staged="$CACHE/window-metrics.reg"
@@ -188,14 +185,14 @@ for name in ("CaptionFont", "SmCaptionFont", "MenuFont",
              "StatusFont", "MessageFont", "IconFont"):
     blob = read(name)
     if blob is None:
-        # Wine leaves StatusFont unwritten and falls back to a built-in,
-        # which is how tooltips kept their boxes after the rest were fixed.
-        # MenuFont is the same shape and size, so start from it.
+        # Wine은 StatusFont를 안 쓰고 내장값으로 떨어진다. 나머지를 다
+        # 고친 뒤에도 툴팁이 네모를 유지한 이유가 이것이다. MenuFont가
+        # 같은 모양과 크기라 거기서 출발한다.
         blob = read("MenuFont")
     if blob is None:
         continue
-    # lfFaceName is the last field of LOGFONTW: 32 UTF-16 code units at
-    # offset 28, null padded.
+    # lfFaceName은 LOGFONTW의 마지막 필드다. 오프셋 28에 UTF-16 32개,
+    # 남는 자리는 0.
     face = "NanumGothic"
     blob[28:28 + 64] = struct.pack("<32H", *([ord(c) for c in face] + [0] * (32 - len(face))))
     out.append('"%s"=hex:%s' % (name, ",".join("%02x" % b for b in blob)))
@@ -207,12 +204,12 @@ PY
   rm -f "$staged"
 }
 
-# 나눔고딕 and not NanumGothic. A font link is keyed on the family name wine
-# actually uses, and NanumGothic.ttf carries both names with the Korean one
-# primary. Whichever comes second becomes a substitution for the first --
-# create_family does that itself, with nothing in the registry to show for it
-# -- and a link keyed on a substituted name is thrown away with
-# "SystemLink entry for substituted font, ignoring".
+# NanumGothic이 아니라 나눔고딕이다. 폰트 링크는 wine이 실제로 쓰는 패밀리
+# 이름으로 걸리는데, NanumGothic.ttf는 두 이름을 다 들고 있고 한국어 쪽이
+# 주 이름이다. 두 번째로 오는 쪽이 첫 번째에 대한 치환이 된다.
+# create_family가 스스로 그렇게 하고 레지스트리에는 흔적을 남기지 않는다.
+# 치환된 이름으로 건 링크는 "SystemLink entry for substituted font,
+# ignoring"과 함께 버려진다.
 link_fallback_fonts() {
   step "linking the fallback faces"
   local staged="$CACHE/fontlink.reg"
@@ -223,20 +220,18 @@ def multi_sz(items):
     data = b"".join(s.encode("utf-16-le") + b"\x00\x00" for s in items) + b"\x00\x00"
     return ",".join("%02x" % b for b in data)
 
-# Hangul first, then emoji. A link is walked in order, for each character the
-# base face has no glyph of its own for.
+# 한글이 먼저, 이모지가 다음. 링크는 기본 face에 자기 글리프가 없는 문자마다
+# 순서대로 훑는다.
 #
-# NanumGothic is in the link and not only in the substitutions because a face
-# wine actually has is never substituted, and several of wine's own faces
-# carry no Hangul at all. What that looks like is not a row of boxes: their
-# .notdef is blank, so the text comes out as the right amount of empty space.
-# The date that appears while a conversation is scrolled read "2  4", with
-# the 월 and the 일 missing and their widths kept.
+# NanumGothic을 치환뿐 아니라 링크에도 넣는 이유는, wine이 실제로 갖고 있는
+# face는 절대 치환되지 않고 wine 자신의 face 몇몇은 한글이 아예 없기
+# 때문이다. 그 모습은 네모가 줄지어 나오는 게 아니다. 그것들의 .notdef가
+# 비어 있어서, 글자가 딱 그만큼의 빈 자리로 그려진다. 대화를 스크롤할 때
+# 뜨는 날짜가 "2  4"로 나왔다. 월과 일이 빠지고 폭만 남았다.
 link = multi_sz(["NanumGothic.ttf,NanumGothic",
                  "NotoEmoji-Regular.ttf,Noto Emoji"])
 
-# Every face an application is likely to ask for by name and wine is likely
-# to answer with something Latin-only.
+# 앱이 이름으로 요청할 만하고 wine이 라틴 전용으로 답할 만한 face들.
 bases = ("나눔고딕", "맑은 고딕", "Malgun Gothic", "Gulim", "Dotum", "Batang",
          "Arial", "Tahoma", "System", "Segoe UI", "Microsoft Sans Serif",
          "MS Shell Dlg", "MS Shell Dlg 2", "MS Sans Serif", "Helvetica",
@@ -253,13 +248,13 @@ PY
   rm -f "$staged"
 }
 
-# The font work is done once, in setup, and setup runs only when there is no
-# client -- so a prefix made before any of it changed would keep the old
-# arrangement for good. The marker says which arrangement it has, and the
-# steps run again when that is not this one.
+# 글꼴 작업은 setup에서 한 번만 하고, setup은 클라이언트가 없을 때만 돈다.
+# 그래서 이 내용이 바뀌기 전에 만들어진 프리픽스는 옛 설정을 영영 들고
+# 있게 된다. 표시 파일이 어느 설정인지 말해주고, 지금 것이 아니면 단계를
+# 다시 돌린다.
 #
-# Bumped whenever install_fonts, substitute_korean_fonts,
-# rename_chrome_fonts or link_fallback_fonts changes.
+# install_fonts, substitute_korean_fonts, rename_chrome_fonts,
+# link_fallback_fonts가 바뀔 때마다 올린다.
 readonly FONTS_VERSION=2
 
 refresh_fonts() {
@@ -295,29 +290,29 @@ install_client() {
   "$SERVER" -w
 }
 
-# The icon GNOME draws in alt-tab and the overview, taken out of the client
-# rather than shipped: the picture is Kakao's. See flatpak/extract-icon.py,
-# which also says why Wine cannot supply it.
+# GNOME이 alt-tab과 오버뷰에 그리는 아이콘. 배포하는 게 아니라 클라이언트
+# 에서 꺼낸다. 그림은 카카오의 것이다. Wine이 왜 이걸 못 주는지는
+# flatpak/extract-icon.py에 있다.
 #
-# ~/.local/share/icons and not /app/share/icons, which would be the ordinary
-# place for it: that one is read-only long before there is a client to take
-# an icon from. Hence --filesystem=xdg-data/icons in the manifest, which
-# exists for this and nothing else.
+# /app/share/icons가 보통의 자리지만 거기는 아니고 ~/.local/share/icons다.
+# 저쪽은 아이콘을 꺼낼 클라이언트가 생기기 한참 전에 읽기 전용이 된다.
+# 매니페스트의 --filesystem=xdg-data/icons가 이것 때문에, 이것만을 위해
+# 있다.
 #
-# Failing is allowed. An icon is not worth refusing to start over, and
-# without one the app looks exactly as it did before.
+# 실패해도 된다. 아이콘 하나 때문에 시작을 거부할 일은 아니고, 없으면
+# 예전과 똑같아 보일 뿐이다.
 install_icon() {
   [[ -f $EXE ]] || return 0
   local dir=$HOME/.local/share/icons/hicolor/256x256/apps
-  # Once is enough, and this runs on every launch: whoever installed before
-  # this existed has a client and no icon, and setup() will never run for
-  # them again. Delete the file to have it made afresh.
+  # 한 번이면 되지만 매번 실행할 때 돈다. 이 코드가 있기 전에 설치한
+  # 사람은 클라이언트는 있고 아이콘은 없는데, 그들에게 setup()은 다시
+  # 돌지 않는다. 다시 만들고 싶으면 파일을 지우면 된다.
   [[ -f $dir/$APP_ID.png ]] && return 0
   step "taking the icon out of the client"
   mkdir -p "$dir" || return 0
   python3 "$SHARE/extract-icon.py" "$EXE" "$dir/$APP_ID.png" || true
-  # Without this GTK keeps serving whatever the cache said, which for a
-  # name that was not there before is nothing at all.
+  # 이게 없으면 GTK는 캐시가 말한 것을 계속 내놓는다. 전에 없던 이름에
+  # 대해서는 아무것도 아니다.
   gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
 }
 
@@ -334,41 +329,40 @@ setup() {
   printf '%s\n' "$FONTS_VERSION" >"$PREFIX/.fonts-version"
 }
 
-# The marker is the client, not a flag file: if the executable is there the
-# prefix has been through all of this, and if it is not then something went
-# wrong and doing it again is the right answer.
+# 표시는 플래그 파일이 아니라 클라이언트 자신이다. 실행 파일이 있으면
+# 프리픽스는 이 모든 단계를 거친 것이고, 없으면 뭔가 잘못된 것이니 다시
+# 하는 게 맞다.
 if [[ $mode == reinstall ]] || [[ ! -f $EXE ]]; then
   setup
 fi
 
 [[ $mode == setup ]] && exit 0
 
-# Wine keeps a record of the monitors and goes looking for one that is no
-# longer listed after a display comes or goes -- "Failed to find monitor with
-# path DISPLAY\Default_Monitor\0000&0001" -- and that stale record is what
-# throws the app's own popups across the screen. Dropping it costs nothing:
-# wine builds it again as it starts, with no wineboot needed.
+# Wine은 모니터 기록을 들고 있다가, 디스플레이가 붙거나 빠진 뒤 목록에
+# 없는 것을 찾아다닌다. "Failed to find monitor with path
+# DISPLAY\Default_Monitor\0000&0001"이 그것이고, 그 낡은 기록이 앱의 팝업을
+# 화면 아무 데나 던진다. 지우는 데 드는 비용은 없다. wine이 시작하면서 다시
+# 만들고 wineboot도 필요 없다.
 wine reg delete 'HKLM\System\CurrentControlSet\Enum\DISPLAY' /f >/dev/null 2>&1 || true
 
 refresh_fonts
 install_icon
 
-# Everything that has to reach the client once it is running has to happen in
-# here, inside the instance that started it. A second `flatpak run` cannot do
-# it: each instance gets its own PID namespace, and a wine process that looks
-# at another process across that boundary takes the whole session down with
-# it. Measured, and it is not a message that does it -- `wine tasklist` from a
-# second instance is enough, and so is kakaoshow --list, which only
-# enumerates. The client and its explorer are gone within five seconds, and
-# the login has to be typed again.
+# 돌고 있는 클라이언트에 닿아야 하는 일은 전부 여기, 그것을 시작한
+# 인스턴스 안에서 일어나야 한다. 두 번째 `flatpak run`으로는 안 된다.
+# 인스턴스마다 PID 네임스페이스가 따로이고, 그 경계를 넘어 다른 프로세스를
+# 들여다보는 wine 프로세스는 세션 전체를 데리고 내려간다. 재봤고, 메시지
+# 때문이 아니다. 두 번째 인스턴스의 `wine tasklist` 하나로 충분하고,
+# 열거만 하는 kakaoshow --list도 마찬가지다. 클라이언트와 explorer가 5초
+# 안에 사라지고 로그인을 다시 쳐야 한다.
 #
-# So the outside writes a word into a file and this reads it. A plain file
-# and not a fifo, because one of the writers is a GNOME Shell extension:
-# opening a fifo for writing blocks until a reader arrives, and in
-# gnome-shell that is the whole desktop stopped.
+# 그래서 바깥이 파일에 단어를 쓰고 이쪽이 읽는다. fifo가 아니라 평범한
+# 파일인 이유는 쓰는 쪽 하나가 GNOME Shell 확장이기 때문이다. fifo를 쓰기로
+# 여는 것은 읽는 쪽이 올 때까지 막히는데, gnome-shell에서 그건 바탕화면
+# 전체가 멈춘다는 뜻이다.
 #
-# Half a second of latency, which for a window coming back is not noticeable,
-# and for a quit does not matter at all.
+# 0.5초 지연이 생긴다. 창이 돌아오는 데는 느껴지지 않고, 종료에는 아무
+# 상관이 없다.
 serve_control() {
   rm -f "$CONTROL"
   while sleep 0.5; do
@@ -377,43 +371,39 @@ serve_control() {
     want=$(<"$CONTROL")
     rm -f "$CONTROL"
     case $want in
-      # What the tray icon is for, without the tray icon. KakaoTalk hides
-      # rather than minimises, so once it is away there is no window to ask
-      # back, and its own tray menu does not open under the Wayland driver.
-      # A +msg trace of a real tray click shows what the app acts on: it
-      # posts itself one message and then calls ShowWindow. kakaoshow sends
-      # that message. See flatpak/kakaoshow.c.
+      # 트레이 아이콘이 하는 일을, 트레이 아이콘 없이. 카카오톡은 최소화가
+      # 아니라 숨기기를 하므로 한 번 사라지면 돌아오라고 말을 걸 창이
+      # 없다. 실제 트레이 클릭을 +msg로 추적하면 앱이 무엇에 반응하는지
+      # 보인다. 자기에게 메시지 하나를 보내고 ShowWindow를 부른다.
+      # kakaoshow가 그 메시지를 보낸다. flatpak/kakaoshow.c를 보라.
       show) timeout 60 "$WINE" "$SHARE/kakaoshow.exe" >/dev/null 2>&1 || true ;;
-      # KakaoTalk's own tray menu, put up by the app itself rather than
-      # imitated out here, so its items are whatever the app has today. It
-      # appears at the pointer, which is where the indicator that asked for
-      # it is. See flatpak/kakaoshow.c.
+      # 카카오톡 자신의 트레이 메뉴. 여기서 흉내 내는 게 아니라 앱이
+      # 직접 띄우므로 항목은 앱이 오늘 갖고 있는 그대로다.
+      # flatpak/kakaoshow.c를 보라.
       menu) timeout 60 "$WINE" "$SHARE/kakaoshow.exe" --menu >/dev/null 2>&1 || true ;;
-      # Nothing dismisses that menu by itself: a click elsewhere on the
-      # desktop lands on another Wayland client and never reaches wine, so
-      # the menu would sit there for good. The extension watches for it
-      # losing the focus and says so.
+      # 그 메뉴는 스스로 닫히지 않는다. 바탕화면 다른 데를 클릭하면 그건
+      # 다른 Wayland 클라이언트에 떨어지고 wine에는 닿지 않으므로, 메뉴는
+      # 영영 그 자리에 있게 된다. 확장이 포커스를 잃는 것을 보고 말해준다.
       menu-close) timeout 60 "$WINE" "$SHARE/kakaoshow.exe" --menu-close >/dev/null 2>&1 || true ;;
-      # Asking, and only asking. taskkill without /f sends WM_CLOSE, which is
-      # what a Windows app expects and what gives KakaoTalk the chance to
-      # write its session out; killing it outright costs a login that has to
-      # be typed again. KakaoTalk treats WM_CLOSE as "hide to the tray"
-      # rather than as an instruction to leave, so something still has to
-      # insist afterwards -- that is the caller's job, from outside. See
-      # bin/kakaotalk-restart.
+      # 묻기만 한다. /f 없는 taskkill은 WM_CLOSE를 보내는데, 윈도우 앱이
+      # 기대하는 것이고 카카오톡이 세션을 기록할 기회를 준다. 그냥 죽이면
+      # 다시 쳐야 하는 로그인이 그 값이다. 카카오톡은 WM_CLOSE를 나가라는
+      # 지시가 아니라 "트레이로 숨기기"로 받아들이므로 누군가 뒤이어 고집을
+      # 부려야 한다. 그건 바깥에 있는 호출자의 몫이다.
+      # bin/kakaotalk-restart를 보라.
       quit) timeout 60 "$WINE" taskkill /im KakaoTalk.exe >/dev/null 2>&1 || true ;;
     esac
   done
 }
 
-# Not exec, and this is why: bwrap waits for everything in the sandbox, not
-# only for the process it started, so a loop left running in the background
-# holds the whole instance open after the client has gone. That is what
-# happened -- eight dead sandboxes after a morning of restarts, each with
-# nothing in it but this loop, and with enough of them about a fresh launch
-# never got a client at all.
+# exec이 아닌 이유는 이렇다. bwrap은 자기가 시작한 프로세스뿐 아니라
+# 샌드박스 안의 모든 것을 기다린다. 그래서 배경에 남겨둔 루프 하나가
+# 클라이언트가 간 뒤에도 인스턴스 전체를 붙잡고 있는다. 실제로 그랬다.
+# 오전 내내 재시작하고 죽은 샌드박스가 여덟 개 남았는데 각각 안에는 이
+# 루프뿐이었고, 그게 충분히 쌓이자 새로 띄운 것은 클라이언트를 아예 갖지
+# 못했다.
 #
-# So the client runs in the foreground and the loop is ended after it.
+# 그래서 클라이언트를 앞에서 돌리고 루프는 그 뒤에 끝낸다.
 serve_control &
 readonly CONTROL_PID=$!
 trap 'kill "$CONTROL_PID" 2>/dev/null || true; rm -f "$CONTROL"' EXIT INT TERM HUP

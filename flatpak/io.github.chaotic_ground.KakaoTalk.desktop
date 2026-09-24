@@ -1,21 +1,20 @@
 [Desktop Entry]
 Type=Application
 Name=카카오톡
-GenericName=Messenger
-Comment=KakaoTalk, in Korean, with the Wine it needs
+GenericName=메신저
+Comment=한국어 카카오톡과, 그것이 필요로 하는 Wine
 Exec=kakaotalk
 Icon=io.github.chaotic_ground.KakaoTalk
 Terminal=false
 Categories=Network;InstantMessaging;
-# Wine names a window after the process that owns it, so this is what every
-# KakaoTalk window calls itself. Without it GNOME has a window it cannot tie
-# to an application, and draws the generic placeholder in alt-tab and the
-# overview.
+# Wine은 창 이름을 그것을 가진 프로세스에서 딴다. 그래서 카카오톡의 모든
+# 창이 자기를 이렇게 부른다. 이게 없으면 GNOME은 앱과 묶을 수 없는 창을
+# 들고 있게 되고, alt-tab과 오버뷰에 일반 자리표시자를 그린다.
 StartupWMClass=kakaotalk.exe
-# The app icon's right-click. KakaoTalk's own menu has 종료 and no restart,
-# and a restart is what clears Wine's stale record of the monitors after a
-# display comes or goes -- so it lives here, where the panel indicator's
-# right-click used to put it before that opened the app's real menu instead.
+# 앱 아이콘의 우클릭. 카카오톡 자신의 메뉴에는 종료는 있고 다시 시작은
+# 없다. 다시 시작은 디스플레이가 붙거나 빠진 뒤 Wine의 낡은 모니터 기록을
+# 지우는 일이다. 그래서 여기 있다. 패널 인디케이터의 우클릭이 앱의 진짜
+# 메뉴를 열기 전에는 거기 있던 것이다.
 Actions=Restart;Quit;
 
 [Desktop Action Restart]

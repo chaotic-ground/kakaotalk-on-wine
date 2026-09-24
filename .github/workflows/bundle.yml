@@ -1,18 +1,17 @@
 ---
 name: Bundle
 
-# Build the single-file flatpak and attach it to the release the install
-# script reads, which is releases/latest/download/kakaotalk.flatpak.
+# 단일 파일 flatpak을 빌드해서, 설치 스크립트가 읽는 릴리스에 붙인다.
+# releases/latest/download/kakaotalk.flatpak이 그것이다.
 #
-# It is built from io.github.chaotic_ground.KakaoTalk.yml and not from
-# local-manifest.yml: that one exists for iterating against files on a
-# workstation, while this one takes everything from the release assets by URL
-# and checksum, which is what makes a build here possible at all.
+# local-manifest.yml이 아니라 io.github.chaotic_ground.KakaoTalk.yml로
+# 빌드한다. 앞의 것은 작업용 기계의 파일을 놓고 반복하려고 있고, 뒤의 것은
+# 모든 것을 릴리스 자산에서 URL과 체크섬으로 가져온다. 여기서 빌드가
+# 가능한 이유가 그것이다.
 #
-# Which also means this does not build Wine. Wine is a forty-minute job that
-# needs a cross compiler, and it changes only when patches/ does; it is
-# published as its own asset, by hand, and the checksum in the manifest is
-# what ties the two together. See patches/README.md.
+# 그래서 Wine은 여기서 빌드하지 않는다. Wine은 크로스 컴파일러가 필요한
+# 40분짜리 작업이고 patches/가 바뀔 때만 바뀐다. 손으로 자기 자산으로
+# 올리고, 매니페스트의 체크섬이 둘을 묶는다. patches/README.md를 보라.
 on:
   push:
     branches: [main]
@@ -25,15 +24,15 @@ on:
 permissions: {}
 
 env:
-  # The release the assets live on. Not a rolling "latest" tag of its own:
-  # the manifest names this one in every source URL, so the bundle and the
-  # things it is built from stay together.
+  # 자산이 사는 릴리스. 따로 굴러가는 "latest" 태그가 아니다. 매니페스트가
+  # 모든 원본 URL에 이 이름을 적고 있어서, 번들과 그것을 만든 것들이 같이
+  # 있게 된다.
   RELEASE: wine-11.18-emoji
 
 jobs:
   bundle:
     runs-on: ubuntu-latest
-    # Two thirds of this is the runtime and the SDK coming down from flathub.
+    # 이 시간의 3분의 2는 런타임과 SDK를 flathub에서 받는 데 쓴다.
     timeout-minutes: 60
     permissions:
       contents: write  # gh release upload
@@ -47,15 +46,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder
 
-      # Ubuntu 24.04 refuses unprivileged user namespaces to anything without
-      # an AppArmor profile, and everything flatpak does is built on them --
-      # bwrap fails with "No permissions to create new namespace" and the
-      # build stops before it starts.
+      # Ubuntu 24.04는 AppArmor 프로필이 없는 것에게 비특권 user namespace를
+      # 거부하는데, flatpak이 하는 모든 일이 그 위에 서 있다. bwrap이
+      # "No permissions to create new namespace"로 실패하고 빌드는 시작도
+      # 못 하고 멈춘다.
       - name: Let bwrap make a namespace
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
-      # --user throughout, so nothing here needs root and the build matches
-      # the way the app is installed.
+      # 전부 --user다. root가 필요 없고, 앱이 설치되는 방식과도 맞는다.
       - name: Add flathub
         run: |
           flatpak remote-add --user --if-not-exists flathub \
@@ -66,19 +64,18 @@ jobs:
           flatpak install --user -y flathub \
             org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08
 
-      # --disable-cache, and not as a precaution. flatpak-builder will reuse a
-      # module whose source it cannot resolve, or whose file has been replaced
-      # in place, and say nothing -- see patches/README.md. A runner starts
-      # empty so there is nothing to reuse, but a cached runner later would
-      # bring the problem with it.
+      # --disable-cache는 예방책이 아니다. flatpak-builder는 원본을 못 찾는
+      # 모듈이나 제자리에서 파일이 바뀐 모듈을 말없이 재사용한다.
+      # patches/README.md를 보라. 러너는 비어 있게 시작하므로 재사용할 것이
+      # 없지만, 나중에 캐시를 쓰는 러너를 도입하면 문제도 같이 온다.
       - name: Build
         working-directory: flatpak
         run: |
           flatpak-builder --user --force-clean --disable-cache \
             --repo=repo build-dir io.github.chaotic_ground.KakaoTalk.yml
 
-      # Checked rather than trusted, for the same reason. The launcher is the
-      # file that changes most often, so it is the one worth looking at.
+      # 같은 이유로, 믿지 말고 확인한다. 런처가 가장 자주 바뀌는 파일이라
+      # 볼 만한 대상이다.
       - name: Check what came out
         working-directory: flatpak
         run: |
