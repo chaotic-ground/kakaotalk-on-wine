@@ -284,6 +284,7 @@ export default class KakaoTalkPopup {
         this._menuUntil = 0;
         this._menuAt = null;
         this._menuPlaced = false;
+        this._syncId = 0;
         this._installed = undefined;
         this._config = DEFAULT_CONFIG;
         this._configPath = GLib.build_filenamev(
@@ -313,7 +314,9 @@ export default class KakaoTalkPopup {
             this._focusId = null;
         }
         this._lastFocused = null;
-        for (const {obj, id, show} of this._tray ?? []) {
+        for (const {obj, id, show, dead} of this._tray ?? []) {
+            if (dead)
+                continue;
             try {
                 obj.disconnect(id);
                 // And put the tray window back on screen. Leaving it hidden
@@ -328,6 +331,10 @@ export default class KakaoTalkPopup {
         }
         this._tray = null;
         this._hidden = null;
+        if (this._syncId) {
+            GLib.source_remove(this._syncId);
+            this._syncId = 0;
+        }
         this._indicator?.destroy();
         this._indicator = null;
         this._virtual = null;
@@ -351,6 +358,9 @@ export default class KakaoTalkPopup {
             // a reload leaves whatever is on screen exactly as it was, which
             // is a poor way to find out whether a change works.
             this._hideChrome(window);
+            // Windows that were already up never went through _handle, so
+            // they would never have told the indicator when they went.
+            window.connect('unmanaged', () => this._syncIndicatorSoon());
             if (owned_tray_check(wmClass)) {
                 this._watchTray(window);
                 // Windows that were already up when this loaded never went
@@ -484,6 +494,49 @@ export default class KakaoTalkPopup {
             return;
         this._indicator = new TrayIndicator(this);
         Main.panel.addToStatusArea('kakaotalk-popup', this._indicator);
+        this._syncIndicator();
+    }
+
+    // It stands in for the tray, and a tray icon exists only while the app
+    // does. With the app closed it was a button in the panel for something
+    // that is not there.
+    //
+    // Except when nothing is installed, and then it is the only thing
+    // offering to install it -- this extension is the landing point, so it
+    // has to be visible before there is anything to stand in for.
+    //
+    // Starting the app is what this gives up. That moved to the app icon,
+    // which now exists: the flatpak ships a desktop file.
+    _syncIndicator() {
+        if (!this._indicator)
+            return;
+        const wanted = !this.appInstalled() || this._appIsUp();
+        if (this._indicator.visible === wanted)
+            return;
+        this._indicator.visible = wanted;
+        if (this._config.log)
+            console.log(`${TAG} indicator ${wanted ? 'shown' : 'hidden'}`);
+    }
+
+    // On a beat, because at 'unmanaged' the window is still in the list the
+    // answer is read from. Coalesced, because the app's last few windows go
+    // together and one look after them is enough.
+    _syncIndicatorSoon() {
+        if (this._syncId)
+            return;
+        this._syncId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {
+            this._syncId = 0;
+            this._syncIndicator();
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _appIsUp() {
+        for (const window of global.display.list_all_windows()) {
+            if (OWNER_CLASSES.includes(window.get_wm_class()))
+                return true;
+        }
+        return false;
     }
 
     // Wine's tray is a window like any other: same pid as the app, drawn by
@@ -857,6 +910,10 @@ export default class KakaoTalkPopup {
         if (OWNER_CLASSES.includes(wmClass) && pid > 0)
             this._pids.add(pid);
 
+        this._syncIndicator();
+        if (OWNER_CLASSES.includes(wmClass))
+            window.connect('unmanaged', () => this._syncIndicatorSoon());
+
         if (owned_tray_check(wmClass)) {
             this._watchTray(window);
             // Again here, and not only from _retype: at creation the actor
@@ -1018,7 +1075,13 @@ export default class KakaoTalkPopup {
             if (actor.visible)
                 actor.hide();
         });
-        this._tray.push({obj: actor, id, show: true});
+        const entry = {obj: actor, id, show: true};
+        this._tray.push(entry);
+        // An actor goes with its window, and reaching a disposed one from
+        // disable() is a warning and a stack trace in the shell's log. There
+        // is no asking a GObject whether it is still there, so note it while
+        // it still is. Only actors need this; the display outlives everything.
+        window.connect('unmanaged', () => (entry.dead = true));
         actor.hide();
         console.log(`${TAG} tray window hidden`);
     }
