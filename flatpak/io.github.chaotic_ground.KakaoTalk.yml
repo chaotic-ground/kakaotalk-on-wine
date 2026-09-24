@@ -145,7 +145,7 @@ modules:
       # and published alongside it. Source is flatpak/kakaoshow.c here.
       - type: file
         url: https://github.com/chaotic-ground/kakaotalk-on-wine/releases/download/wine-11.18-emoji/kakaoshow.exe
-        sha256: 7a275ac8cb7b3db8f77ee2f6c3eb0c3232153eab4ec30c05452c9ecd3b4993e3
+        sha256: 19a78a7e24e333531a1efadcb434f6926ad263e49d11dc9d5427a9a868569b34
       - type: file
         path: ../config/kakaotalk-korean.reg
       - type: file
