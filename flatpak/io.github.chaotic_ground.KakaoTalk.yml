@@ -68,6 +68,13 @@ finish-args:
   # Sending and receiving files is most of what the app is for, so give it
   # the one directory that is for exactly that rather than all of $HOME.
   - --filesystem=xdg-download
+  # For one file: the icon, which the launcher takes out of the installed
+  # client and writes where the icon theme looks. It cannot go in /app/share
+  # like an ordinary app's, because that is read-only long before there is a
+  # client to take an icon from, and it cannot come from Wine either --
+  # winewayland sets window icons over xdg-toplevel-icon-v1 and mutter does
+  # not implement it. See install_icon in the launcher.
+  - --filesystem=xdg-data/icons:create
   # The host's fonts arrive at /run/host/fonts without asking, and the two
   # faces this cannot do without are bundled below, so there is nothing to
   # request here. /usr is reserved by flatpak and asking for it is refused
@@ -99,7 +106,7 @@ modules:
       - type: archive
         strip-components: 0
         url: https://github.com/chaotic-ground/kakaotalk-on-wine/releases/download/wine-11.18-emoji/wine-11.18-emoji-wow64-x86_64.tar.xz
-        sha256: 461ba8c5b09dd37af1bd664ce5495aeb6873820c4b6d52d3b2e21db084e10c8d
+        sha256: d28ddaed70e45562d7d56be662edf9bf3a8a6d765609db102019da1aedab4ac8
 
   # The two faces the prefix cannot do without. Bundled rather than taken
   # from the host: a prefix with no Korean font draws every Hangul glyph as a
@@ -126,6 +133,10 @@ modules:
     build-commands:
       - install -Dm755 kakaotalk /app/bin/kakaotalk
       - install -Dm644 kakaotalk-korean.reg /app/share/kakaotalk/kakaotalk-korean.reg
+      - install -Dm755 extract-icon.py /app/share/kakaotalk/extract-icon.py
+      # The name has to be the app id, or flatpak will not export it.
+      - install -Dm644 io.github.chaotic_ground.KakaoTalk.desktop
+        /app/share/applications/io.github.chaotic_ground.KakaoTalk.desktop
       - install -Dm644 kakaoshow.exe /app/share/kakaotalk/kakaoshow.exe
     sources:
       - type: file
@@ -137,3 +148,7 @@ modules:
         sha256: 548210a5a9d813d5341272c663a7cddc11b512eed7193e6d62727e1b81610847
       - type: file
         path: ../config/kakaotalk-korean.reg
+      - type: file
+        path: extract-icon.py
+      - type: file
+        path: io.github.chaotic_ground.KakaoTalk.desktop

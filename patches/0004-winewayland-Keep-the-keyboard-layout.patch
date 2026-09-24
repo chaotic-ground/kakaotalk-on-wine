@@ -1,0 +1,65 @@
+From: kakaotalk-on-wine
+Subject: [PATCH] winewayland: Do not fall back to QWERTY when the locale is
+ not the layout's
+
+Ctrl+V pasted from the key labelled V rather than the key that types v,
+on a Dvorak keyboard, and every other shortcut was in its QWERTY place
+too. The scancode arrives correctly and the driver's tables are right;
+they were not being used.
+
+WAYLAND_KbdLayerDescriptor finds a layout by rebuilding its HKL and
+comparing, and get_layout_hkl puts the layout's own language in the high
+word. The thread that asks is the keyboard event thread, which turns
+scancodes into vkeys and has never had a layout activated -- the
+activation is a message to the focused window and never reaches it -- so
+NtUserGetKeyboardLayout hands it one invented from the user locale,
+MAKELONG(locale, locale). Nothing matches that unless the locale happens
+to equal the layout's language, and the miss returns NULL, which win32u
+answers with its built-in tables. Those are QWERTY.
+
+Which is why this has gone unnoticed: on a QWERTY keyboard the wrong
+fallback is right. It shows up as soon as the two differ, and a prefix
+whose locale is not the keyboard's language -- a Korean prefix with a US
+keyboard, say -- gets it on every key.
+
+Answer with the layout the compositor says is active instead. The driver
+knows it; there is no reason to guess from a locale.
+---
+ dlls/winewayland.drv/wayland_keyboard.c | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/dlls/winewayland.drv/wayland_keyboard.c b/dlls/winewayland.drv/wayland_keyboard.c
+--- a/dlls/winewayland.drv/wayland_keyboard.c
++++ b/dlls/winewayland.drv/wayland_keyboard.c
+@@ -1013,6 +1013,28 @@ const KBDTABLES *WAYLAND_KbdLayerDescriptor(HKL hkl)
+ 
+     LIST_FOR_EACH_ENTRY(layout, &xkb_layouts, struct layout, entry)
+         if (hkl == get_layout_hkl(layout, LOWORD(hkl))) break;
++
++    /* A thread that has never had a layout activated is handed one invented
++     * from the user locale -- MAKELONG(locale, locale) -- and no layout will
++     * ever match that, because get_layout_hkl puts the layout's own language
++     * in the high word. The keyboard event thread is such a thread: the
++     * layout change goes to the focused window by message and never reaches
++     * it, and it is the thread that turns scancodes into vkeys.
++     *
++     * Returning NULL there falls back to the built-in tables, which are
++     * QWERTY. That is invisible on a QWERTY keyboard and wrong on every
++     * other one, and a prefix whose locale differs from the keyboard's
++     * language -- a Korean prefix with a US keyboard, say -- gets it every
++     * time. So answer with the layout the compositor says is in use, which
++     * is what the caller wanted to ask about.
++     */
++    if (&layout->entry == &xkb_layouts && hkl != keyboard_hkl)
++    {
++        WARN("No Xkb layout for HKL %p, falling back to the active one\n", hkl);
++        LIST_FOR_EACH_ENTRY(layout, &xkb_layouts, struct layout, entry)
++            if (keyboard_hkl == get_layout_hkl(layout, LOWORD(keyboard_hkl))) break;
++    }
++
+     if (&layout->entry == &xkb_layouts) layout = NULL;
+     else xkb_layout_addref(layout);
+ 
+-- 
+2.55.0
+
