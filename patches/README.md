@@ -1,8 +1,8 @@
 # Patches
 
-Wine changes this needs and upstream does not have. Building Wine is not part
-of `bin/kakaotalk-bottle` and is not expected of anyone: without this the app
-works, minus emoji.
+Wine changes this needs and upstream does not have. They are in the published
+Wine, so installing the flatpak is enough; building them is for changing
+them.
 
 ## 0001 — an astral character is drawn as one character
 
@@ -167,18 +167,13 @@ paragraph:
 diff <(tar -tf old.tar.xz | sed 's#/$##' | sort) <(find wine-11.18-emoji | sort)
 ```
 
-The flatpak takes it from there -- see `flatpak/` -- or put it where Bottles
-looks for runners and point the bottle at it:
+The flatpak takes it from there. Put the tarball at
+`flatpak/wine-11.18-emoji-wow64-x86_64.tar.xz` and build with
+`local-manifest.yml`, which reads it from disk; the tracked manifest reads
+the published one by URL and checksum instead.
 
-```sh
-cp -a ~/wine-emoji \
-  ~/.var/app/com.usebottles.bottles/data/bottles/runners/wine-11.18-emoji
-flatpak run --command=bottles-cli com.usebottles.bottles \
-  edit -b KakaoTalk --runner wine-11.18-emoji
-```
-
-Close the app first. Replacing a runner directory underneath a running
-prefix leaves a zombie and takes the app with it.
+Close the app first. Replacing Wine underneath a running prefix leaves a
+zombie and takes the app with it.
 
 **Check that what you built is what is running.** flatpak-builder caches a
 module and will reuse it silently. Twice over: a manifest moved to another
@@ -201,11 +196,11 @@ sha256sum "$(find ~/.local/share/flatpak/app/io.github.chaotic_ground.KakaoTalk 
 The prefix was made by an older Wine, so the first run updates it. That is
 `wineboot -u` and it happens by itself.
 
-**A self-built runner lives under `$HOME`, where endpoint antimalware can
+**A Wine built here lives under `$HOME`, where endpoint antimalware can
 reach it** -- see "Endpoint antimalware eats Wine" in the top-level README.
-The one Bottles ships survives because it sits in the flatpak runtime's
-read-only `/usr`. If 92 files go missing from the runner shortly after it is
-installed, that is what happened.
+Once it is inside the flatpak it is safe, because a deployed app is
+read-only. If 92 files go missing from a build shortly after it is made,
+that is what happened.
 
 ## Testing it
 

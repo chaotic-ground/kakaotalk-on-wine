@@ -1,37 +1,39 @@
 # kakaotalk-on-wine
 
-KakaoTalk, in Korean, on a GNOME Wayland desktop, set up in one command and
-written down so the next person does not have to find it all again.
-
-```sh
-git clone https://github.com/chaotic-ground/kakaotalk-on-wine
-kakaotalk-on-wine/bin/kakaotalk-bottle
-```
-
-Or install the flatpak, which carries its own Wine -- patched, so emoji draw
--- and needs nothing on the host besides flatpak itself:
+KakaoTalk, in Korean, on a GNOME Wayland desktop, in one file and written
+down so the next person does not have to find it all again.
 
 ```sh
 curl -fLO https://github.com/chaotic-ground/kakaotalk-on-wine/releases/latest/download/kakaotalk.flatpak
 flatpak install --user kakaotalk.flatpak
 ```
 
-The shell extension is worth having either way, and is the part that has to
-be installed by hand, since a sandboxed app cannot put anything in
-`~/.local/share/gnome-shell/extensions`. So it is the landing point: install
-it, and its panel indicator offers to fetch the rest.
+It carries its own Wine, patched, and needs nothing on the host besides
+flatpak. KakaoTalk itself is not in it and cannot be, since it is Kakao's to
+distribute; the launcher fetches the installer on first run.
 
-Idempotent: re-running fills in only what is missing. Close KakaoTalk first,
-or the registry steps crawl while it holds the prefix.
+The shell extension is the other half, and the part that has to be installed
+by hand: a sandboxed app cannot put anything in
+`~/.local/share/gnome-shell/extensions`. So it is also the landing point.
+Install it, and its panel indicator offers to fetch the rest.
 
-Tested on Fedora 43, GNOME 49 Wayland, Bottles 67, Wine 11.0 and a patched
-11.18, KakaoTalk 26.8 (64-bit).
+```sh
+git clone https://github.com/chaotic-ground/kakaotalk-on-wine
+cp -r kakaotalk-on-wine/gnome/kakaotalk-popup@lens0021 \
+  ~/.local/share/gnome-shell/extensions/
+gnome-extensions enable kakaotalk-popup@lens0021
+```
+
+Tested on Fedora 43, GNOME 49 Wayland, Wine 11.18 patched, KakaoTalk 26.8
+(64-bit).
 
 ## What it does
 
-Installs [Bottles](https://usebottles.com) from Flathub, builds a bottle for
-KakaoTalk, and configures it. Wine comes from inside the flatpak, so nothing
-is installed on the host.
+Sets up a Wine prefix in Korean and installs the client into it, on first
+run and never again. Four things have to be Korean before the installer
+runs, each failing quietly and differently when it is missing, and KakaoTalk
+reads its UI language once -- so the ordering is the whole of it. See
+`flatpak/kakaotalk`.
 
 The 64-bit client, so no part of the prefix is 32-bit and WoW64 never comes
 into it. Kakao publishes three Windows builds and links all of them from the
@@ -43,20 +45,20 @@ download page; the one every search result hands you is the 32-bit one at
 | | |
 |---|---|
 | Korean UI, Hangul everywhere | works |
-| Tray icon, click to restore the window | works |
-| Panel indicator: raise, restore or start | works, via the extension |
-| Restart and quit, on the indicator's right click | works, via the extension |
-| Popup on top, and out of the window list | works, via the extension |
-| Popup never taking the focus | works, via the extension |
-| Recovery if the tray window is closed | works, via the extension |
-| New-message popups, bottom right | works, via a shell extension |
-| The leftover window a notification strands | hidden, via the extension |
 | Menus, tooltips, dialogs in Korean | works |
-| Emoji | works, **with a patched Wine** (`patches/`); monochrome |
+| Panel indicator: raise the window, or restore it | works, via the extension |
+| KakaoTalk's own tray menu, on the indicator's right click | works, **with a patched Wine** (0005) |
+| Restart and quit, on the app icon's right click | works |
+| Alt-tab icon and name | works |
+| New-message popups, bottom right and on top | works, via the extension |
+| Popup never taking the focus | works, via the extension |
+| The leftover window a notification strands | hidden, via the extension |
+| The date while a conversation is scrolled | placed, via the extension |
+| Two-finger scroll | works, **with a patched Wine** (0002) |
+| Emoji | works, **with a patched Wine** (0001); monochrome |
+| Pasting an image, or a screenshot | works, **with a patched Wine** (0003, 0006) |
+| Shortcuts on a non-QWERTY keyboard | works, **with a patched Wine** (0004) |
 | The window coming back to the front by itself | **it does not** |
-| Two-finger scroll | works, **with a patched Wine** (`patches/`) |
-| Tray icon right-click menu | **nothing happens** |
-| Alt-tab label | says "Bottles" |
 
 The rest are Wine's or Wayland's, not settings. Each is
 written up where the code deals with it, along with what was ruled out, so
@@ -98,8 +100,7 @@ nobody repeats the search:
   posts the app the same `WM_COMMAND` a tray click makes it post itself, so
   the indicator asks the app directly -- no floating tray window, no pointer
   warped across the screen, no second click from a hand. The tray window is
-  hidden outright where that works; a Bottles install keeps it, since there
-  the hand clicking it is the only way back.
+  hidden outright, since nothing needs to click it any more.
 
   A leftover makes this worse than it needs to be: every notification strands
   a 107x29 window titled 카카오톡, the same title the real one carries, and
@@ -125,13 +126,11 @@ nobody repeats the search:
   Wine bug and is patched now -- see `patches/`, 0005. The menu is what the
   panel indicator's right-click opens: KakaoTalk's own, put up by the app,
   rather than an imitation that would have to be kept in step with it. It
-  lands where the compositor puts it and not at the pointer, because a
-  Wayland client cannot place its own toplevel.
-- **Alt-tab** says "Bottles" because GNOME trusts a window's sandbox identity
-  over the WM_CLASS it claims, deliberately, so a sandboxed app cannot pose
-  as another. `flatpak run` puts every process in
-  `app-flatpak-com.usebottles.bottles-*.scope`, and the desktop entry's
-  correct StartupWMClass loses to it.
+  arrives wherever the compositor felt like putting it, because a Wayland
+  client cannot place its own toplevel, so the extension moves it under the
+  click and closes it when the focus leaves -- a click elsewhere lands on
+  another Wayland client and never reaches Wine, so nothing would dismiss it
+  otherwise.
 
 Quit and restart live on the app icon's right-click, as desktop actions. The
 panel indicator's right-click is KakaoTalk's own menu, which has its own
@@ -146,8 +145,8 @@ change: Wine keeps a stale record of the monitors, which the restart clears.
 **KakaoTalk reads the UI language once, while installing.** A client installed
 against an English prefix stays English afterwards no matter what the prefix
 says later, window title included. Everything else has to be Korean first,
-which is what the ordering in `bin/kakaotalk-bottle` is for, and `--reinstall`
-is the way out of a bottle built wrong.
+which is what the ordering in `flatpak/kakaotalk` is for, and `--reinstall`
+is the way out of a prefix set up wrong.
 
 **The flatpak starts with no Korean font at all.** Inside it,
 `/usr/share/fonts` is the GNOME runtime's own set, Latin only, and the host's
@@ -188,11 +187,10 @@ err:module:import_dll Library gdi32.dll (which is needed by
 ```
 
 Two different upstream archives lost the *same 92 filenames*, which is what
-finally gave it away -- that is not how a bad download fails. The runner
-Bottles ships survives because it lives in the flatpak runtime's read-only
-`/usr`, where nothing can reach it. `ensure_runner` checks for `gdi32.dll`
-right after extracting and says this instead of letting Wine say the other
-thing.
+finally gave it away -- that is not how a bad download fails. Wine inside the
+flatpak is safe, because a deployed app is read-only; what the scanner can
+reach is a build sitting under `$HOME` on its way in, and the prefix, which
+lives in `~/.var/app` and cannot be moved out of reach.
 
 **GNOME draws the generic placeholder because it has a window it cannot tie
 to an application.** Wine names a window after the process that owns it, so
@@ -226,26 +224,26 @@ writing blocks until a reader arrives.
 
 **GNOME will not notice a new desktop file id's actions,** or a new extension
 directory, until the next login, and a Wayland session cannot restart the
-shell. Hence `kakaotalk-bottle.desktop` rather than `kakaotalk.desktop`, and
-hence the extension being split into a loader plus `impl.js` that the loader
-re-imports with a cache-busting query, so editing it afterwards costs a
-disable/enable instead of a logout.
+shell. That is why the extension keeps its old directory name however much
+it grows, and why it is split into a loader plus `impl.js` that the loader
+re-imports with a cache-busting query -- editing it afterwards costs a
+disable/enable instead of a logout. The metadata is read at load time and is
+not covered by that, so a rename shows up only after a logout.
 
 ## Layout
 
-- `bin/kakaotalk-bottle` — the whole setup, idempotent.
-  `KAKAOTALK_DPI` and `WINE_GRAPHICS` override the two choices most likely to
-  differ on another machine. `KAKAOTALK_WINE` takes a
-  [kron4ek](https://github.com/Kron4ek/Wine-Builds) release and pins plain
-  upstream Wine instead of the one Bottles ships, which is what you want
-  before reporting anything upstream.
-- `bin/kakaotalk-restart` — behind the app icon's quit and restart actions,
-  and the extension's. Uses whichever of the two installs is present, flatpak
-  first. Drops Wine's stale monitor record on the way past.
+- `bin/kakaotalk-restart` — start, quit and restart from outside the sandbox.
+  The launcher does most of this from the inside and is the better place for
+  it; what cannot happen in there is insisting, since each flatpak instance
+  has its own PID namespace. The extension calls it to recover a stranded
+  app.
 - `bin/kakaotalk-install` — fetches the current bundle and installs it for a
   user, no root. What the indicator calls when nothing is installed yet.
-- `flatpak/` — the manifest and the launcher inside it. Built from the
-  release assets, so it stands on its own rather than needing this checkout.
+- `flatpak/` — the manifest and the launcher inside it.
+  `io.github.chaotic_ground.KakaoTalk.yml` takes everything by URL and
+  checksum, so it stands on its own rather than needing this checkout, and
+  that is what CI builds from. `local-manifest.yml` is the same thing with
+  local paths, for iterating against files on a workstation.
   `kakaoshow.c` is the one Windows program here: it asks a running KakaoTalk
   to show its window, which is what makes the tray dispensable.
   `extract-icon.py` takes the app's icon out of the installed client, since
@@ -265,7 +263,8 @@ disable/enable instead of a logout.
   how to build them. Not part of the setup: without them the app works, minus
   emoji.
 - `config/kakaotalk-korean.reg` — UI language and Latin font substitutions,
-  applied as a Bottles registry rule so a runner swap cannot undo it.
+  imported into the prefix before the client is installed. KakaoTalk reads
+  its UI language once, so this has to be in place first.
 - `config/kakaotalk-popup.json` — rules for the extension below.
 - `gnome/kakaotalk-popup@lens0021/` — "KakaoTalk on Wayland", which is most
   of what the driver leaves short. The directory keeps its old name: GNOME

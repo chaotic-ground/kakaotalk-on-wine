@@ -607,8 +607,9 @@ export default class KakaoTalkPopup {
         // pointer being warped across the screen, and without a second click
         // from a hand. See flatpak/kakaoshow.c.
         //
-        // Only the flatpak carries it. A Bottles install falls through to
-        // the tray below, which is what it has always done.
+        // Guarded on the app being installed, because kakaoshow comes with
+        // it. With nothing installed there is nothing to ask, and the
+        // fallback below is all that is left.
         if (this.appInstalled()) {
             if (this._config.log)
                 console.log(`${TAG} asking the app to show itself`);
@@ -778,9 +779,9 @@ export default class KakaoTalkPopup {
             // the indicator asks the app directly and the window is a small
             // square of leftover in the corner.
             //
-            // Only where --show exists. A Bottles install still reaches the
-            // app by having a hand click that window, so hiding it there
-            // would take away the only way back.
+            // Only where --show exists, which is to say only where the app
+            // is installed: without it a hand clicking that window is the
+            // one way back, and hiding it would take that away.
             if (this._config.hide_tray_window && this.appInstalled())
                 this._hideTrayWindow(window);
             return true;
@@ -1275,8 +1276,8 @@ export default class KakaoTalkPopup {
     }
 
     // Full path rather than a name on PATH: the shell's PATH is whatever the
-    // session started with, and ~/.local/bin is not reliably on it.
-    // kakaotalk-bottle puts the symlink there.
+    // session started with, and ~/.local/bin is not reliably on it. Symlink
+    // bin/kakaotalk-restart there.
     //
     // Variadic because a plain restart is the helper with no argument at
     // all, and [helper, undefined] is not that.

@@ -1,41 +1,27 @@
 #!/bin/bash
-# Start, quit or restart KakaoTalk.
+# Start, quit or restart KakaoTalk from outside its sandbox.
 #
 #   --start    start it, unless it is already running
-#   --quit     stop it
+#   --quit     stop it, and insist if asking does not work
 #   --recover  restart it, but only if it is still running
-#   (nothing)  stop it, clear Wine's stale monitor record, start it again
+#   (nothing)  stop it and start it again
 #
-# --start is what the desktop entry runs, and the guard in it is the point.
-# Launching the app a second time while it is running does not raise the
-# window, it kills the app: a second client starts in the same prefix,
-# KakaoTalk is single-instance, and both ends of that argument lose. Clicking
-# the icon of a running app is an ordinary thing to do, so the entry must not
-# pass it through.
+# The flatpak's own launcher does most of this from the inside and is the
+# better place for it: `kakaotalk --quit`, `--restart`, `--show`. What cannot
+# happen in there is insisting -- each flatpak instance has its own PID
+# namespace, so nothing inside one can signal a client running in another,
+# and an app that treats WM_CLOSE as "hide to the tray" has to be insisted
+# with. That is what this is for.
 #
-# quit and restart hang off the entry's right-click actions because the tray
-# menu, which is all KakaoTalk itself offers, does not open under Wine's
-# Wayland driver -- right-clicking the floating tray window produces no window
-# at all. Left-clicking it does restore the main window, which is the way back
-# to a minimised app.
-#
-# Restart also drops Wine's record of the monitors, because a display coming
-# or going leaves it stale and restarting alone does not clear it.
+# The GNOME extension calls it for --recover, and the desktop entry's guard
+# is the other reason it exists: launching the app a second time while it is
+# running does not raise the window, it kills the app. A second client starts
+# in the same prefix, KakaoTalk is single-instance, and both ends of that
+# argument lose.
 set -euo pipefail
 IFS=$'\n\t'
 
-# Two ways to have KakaoTalk installed, and whichever is there is used. The
-# flatpak is preferred: it carries its own Wine, patched so that emoji draw,
-# and needs nothing set up on the host. Bottles was how this started and
-# still works, so a machine part-way through the change is not left broken.
 readonly APP_ID=io.github.chaotic_ground.KakaoTalk
-readonly FLATPAK_ID=com.usebottles.bottles
-readonly BOTTLE=KakaoTalk
-readonly PROGRAM=카카오톡
-
-have_app() {
-  flatpak info "$APP_ID" >/dev/null 2>&1
-}
 
 # The file the flatpak's launcher watches. It is under ~/.var/app, which is
 # the host's own filesystem, so writing it from out here costs nothing and
@@ -67,11 +53,7 @@ ask_app() {
 
 # Enough of the prefix path to tell this install's processes from anyone
 # else's Wine.
-if have_app; then
-  readonly PREFIX_HINT=$APP_ID
-else
-  readonly PREFIX_HINT=bottles/bottles/$BOTTLE
-fi
+readonly PREFIX_HINT=$APP_ID
 
 # pgrep counts a zombie as running. KakaoTalk leaves them behind whenever its
 # launcher is killed rather than allowed to reap, and a zombie holds nothing
@@ -97,9 +79,9 @@ running() {
 # and itself with it, so the wait is not merely wasted, it undoes the launch
 # that was already on its way.
 # Measured, so that the number means something: a start takes about nine
-# seconds from a warm prefix. A launcher older than this is not working, it is
-# left over -- bottles-cli run routinely outlives the app it started -- and
-# treating one as a launch in progress blocks every future start for good.
+# seconds from a warm prefix. A launcher older than this is not working, it
+# is left over, and treating one as a launch in progress blocks every future
+# start for good.
 readonly LAUNCH_SECONDS=60
 
 # $1 is a comparison against the launcher's age in seconds, as awk sees it.
@@ -112,7 +94,7 @@ readonly LAUNCH_SECONDS=60
 launcher_pids() {
   # shellcheck disable=SC2009  # matching on the full command line, not a name
   ps -eo pid=,etimes=,args= |
-    awk -v head='flatpak run' -v tail=" $(have_app && echo "$APP_ID" || echo "--command=bottles-cli")" \
+    awk -v head='flatpak run' -v tail=" $APP_ID" \
       -v limit="$LAUNCH_SECONDS" \
       -v want="$1" 'BEGIN { pattern = head tail }
         index($0, pattern) &&
@@ -161,10 +143,7 @@ reap_tray() {
 }
 
 launch() {
-  if have_app; then
-    exec flatpak run "$APP_ID"
-  fi
-  exec flatpak run --command=bottles-cli "$FLATPAK_ID" run -b "$BOTTLE" -p "$PROGRAM"
+  exec flatpak run "$APP_ID"
 }
 
 # The marker is set around the whole of it rather than by a RETURN trap,
@@ -193,17 +172,12 @@ stop_now() {
   # session out. Killing the process outright does not, and a login that has
   # to be typed again is the visible cost of that.
   #
-  # The asking happens inside whichever sandbox the app lives in -- the
-  # flatpak by way of ask_app, which never starts one -- and the insisting
-  # below happens out here, and has to. A flatpak instance has its own PID
-  # namespace, so nothing started inside one can signal a client running in
-  # another, wineserver -k included, which works by pid.
-  if have_app; then
-    ask_app quit || true
-  else
-    timeout 60 flatpak run --command=bottles-cli "$FLATPAK_ID" shell -b "$BOTTLE" \
-      -i 'taskkill /im KakaoTalk.exe' >/dev/null 2>&1 || true
-  fi
+  # The asking happens inside the sandbox, by way of ask_app, which never
+  # starts one; the insisting below happens out here, and has to. A flatpak
+  # instance has its own PID namespace, so nothing started inside one can
+  # signal a client running in another, wineserver -k included, which works
+  # by pid.
+  ask_app quit || true
 
   for _ in {1..15}; do
     if ! running; then
@@ -258,20 +232,13 @@ case ${1-} in
     ;;
   "")
     stop
-    # Wine goes looking for a monitor it no longer lists and says so --
-    # "Failed to find monitor with path DISPLAY\Default_Monitor\0000&0001" --
-    # and that stale record is what throws the app's own popups across the
-    # screen. The key has to go; Wine builds it again at the next start, with
-    # no wineboot needed. The flatpak drops it on every launch and needs no
-    # help here.
-    if ! have_app; then
-      timeout 120 flatpak run --command=bottles-cli "$FLATPAK_ID" shell -b "$BOTTLE" \
-        -i 'reg delete "HKLM\System\CurrentControlSet\Enum\DISPLAY" /f' >/dev/null 2>&1 || true
-    fi
+    # Wine's record of the monitors goes stale when a display comes or goes,
+    # and a stale one is what throws the app's own popups across the screen.
+    # Nothing to do here: the launcher drops that key on every start.
     launch
     ;;
   *)
-    echo "usage: ${0##*/} [--start|--quit]" >&2
+    echo "usage: ${0##*/} [--start|--quit|--recover]" >&2
     exit 2
     ;;
 esac

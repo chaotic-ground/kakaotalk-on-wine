@@ -57,7 +57,7 @@ finish-args:
   # Flatpak's seccomp filter blocks what WoW64 needs to put the CPU into
   # 32-bit mode, so a 32-bit PE dies before it starts and wine reports it as
   # "Application could not be started" from start.exe, which sounds like a
-  # missing file and is not. Bottles asks for the same two.
+  # missing file and is not.
   - --allow=multiarch
   - --allow=devel
   - --device=dri

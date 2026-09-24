@@ -1,13 +1,6 @@
 #!/bin/bash
 # Set the prefix up if it is not, then run KakaoTalk.
 #
-# This is bin/kakaotalk-bottle with Bottles taken out. Every step it did
-# survives -- the ordering matters and is explained there -- but each one
-# talks to wine directly instead of through bottles-cli, which is shorter in
-# most places and in some cases removes a workaround: nothing has to be
-# staged inside the prefix to get it past a sandbox that cannot see $HOME,
-# because in here $HOME is the app's own data directory.
-#
 # Four things have to be Korean before the installer runs, and each fails
 # quietly and differently when it is missing: the runtime locale, LC_ALL for
 # wine, the Windows UI language in the registry, and a Korean font inside the
@@ -46,11 +39,11 @@ readonly EXE="$PREFIX/drive_c/Program Files/Kakao/KakaoTalk/KakaoTalk.exe"
 
 # Unset, and deliberately. Wine's own default is 96 and the scale of the
 # screen is the compositor's business, not this package's -- winewayland is a
-# native Wayland client and is told. bin/kakaotalk-bottle pins 144 because it
-# was written for the XWayland path, where wine is handed the panel's real
-# pixels and a 96 DPI prefix comes out tiny; that reasoning does not carry
-# over. Set KAKAOTALK_DPI to override, and note that the tray icon size hangs
-# off the same number.
+# native Wayland client and is told. A DPI worth pinning is one carried over
+# from the XWayland path, where wine is handed the panel's real pixels and a
+# 96 DPI prefix comes out tiny; that reasoning does not hold here. Set
+# KAKAOTALK_DPI to override, and note that the tray icon size hangs off the
+# same number.
 readonly DPI=${KAKAOTALK_DPI:-}
 readonly GRAPHICS=${WINE_GRAPHICS:-wayland}
 

@@ -18,7 +18,9 @@
 #
 # Usage:
 #   kakaotalk-trace          start traced, and hold the terminal
-#   kakaotalk-trace --off    put WINEDEBUG back and start normally
+#
+# There is nothing to undo afterwards. The channels are set with --env on the
+# launch, so they last exactly as long as that run.
 #
 # Leave it running. When the window misbehaves the log is already on disk --
 # rewritten every couple of seconds -- so read it then, and take a
@@ -29,9 +31,7 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-readonly FLATPAK_ID=com.usebottles.bottles
-readonly BOTTLE=KakaoTalk
-readonly PROGRAM=카카오톡
+readonly APP_ID=io.github.chaotic_ground.KakaoTalk
 readonly CHANNELS=${KAKAOTALK_WINEDEBUG:-+timestamp,+msg}
 readonly LOG=${KAKAOTALK_TRACE_LOG:-$HOME/kakaotalk-trace.log}
 
@@ -42,40 +42,21 @@ readonly KEEP=${KAKAOTALK_TRACE_LINES:-300000}
 
 readonly REPO="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)"
 
-set_debug() {
-  timeout 120 flatpak run --command=bottles-cli "$FLATPAK_ID" \
-    edit -b "$BOTTLE" --env-var "WINEDEBUG=$1" >/dev/null 2>&1
-}
-
-if [[ ${1-} == --off ]]; then
-  "$REPO/bin/kakaotalk-restart" --quit
-  set_debug -all
-  echo "WINEDEBUG=-all; starting normally"
-  exec "$REPO/bin/kakaotalk-restart" --start
-fi
-
 if [[ -n ${1-} ]]; then
-  echo "usage: ${0##*/} [--off]" >&2
+  echo "usage: ${0##*/}" >&2
   exit 2
 fi
 
+# Nothing to set and nothing to put back. The manifest pins WINEDEBUG=-all,
+# and --env on the launch overrides it for that run only -- so a traced run
+# leaves nothing behind, which is the whole of what --off used to undo.
 "$REPO/bin/kakaotalk-restart" --quit
-set_debug "$CHANNELS"
 
 echo "WINEDEBUG=$CHANNELS"
 echo "keeping the last $KEEP lines in $LOG"
-echo "leave this running; Ctrl-C puts WINEDEBUG back"
+echo "leave this running; Ctrl-C ends the traced run"
 
-# Back to -all whatever happens, because a bottle left tracing is a bottle
-# that runs slowly for reasons nobody will remember tomorrow.
-#
-# INT TERM HUP as well as EXIT, not EXIT alone: bash runs an EXIT trap when
-# the script ends, and when a signal kills it that is not what happens. Found
-# the way these things are -- a test run cut short by timeout, which sends
-# TERM, and a bottle left tracing afterwards.
-trap 'set_debug -all; echo; echo "WINEDEBUG restored"; exit' EXIT INT TERM HUP
-
-flatpak run --command=bottles-cli "$FLATPAK_ID" run -b "$BOTTLE" -p "$PROGRAM" 2>&1 |
+flatpak run --env="WINEDEBUG=$CHANNELS" "$APP_ID" 2>&1 |
   python3 -c '
 import collections, signal, sys, time
 

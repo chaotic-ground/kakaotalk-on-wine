@@ -16,9 +16,9 @@ Windows Registry Editor Version 5.00
 ; rather than the system default.
 ;
 ; REG_MULTI_SZ as "ko-KR\0\0" in *8-bit* chars, not UTF-16, even though the
-; header above says 5.00: Bottles hands this file to `reg import` without a
-; BOM, and Wine falls back to reading a BOM-less file as ANSI, so UTF-16 hex
-; would land in the registry as "k\0o\0-\0K\0R\0".
+; header above says 5.00. This file reaches `reg import` without a BOM, and
+; Wine falls back to reading a BOM-less file as ANSI, so UTF-16 hex would
+; land in the registry as "k\0o\0-\0K\0R\0".
 
 [HKEY_CURRENT_USER\Control Panel\Desktop]
 "PreferredUILanguages"=hex(7):6b,6f,2d,4b,52,00,00
@@ -49,5 +49,5 @@ Windows Registry Editor Version 5.00
 ; line loses to Z:\app\share\wine\fonts\tahoma.ttf -- a +font trace of the
 ; tray menu shows exactly that. The LOGFONTs under Control Panel\Desktop\
 ; WindowMetrics name Tahoma outright, which is why the menu drew boxes for so
-; long; kakaotalk-bottle rewrites the face inside those blobs instead.
+; long; the launcher rewrites the face inside those blobs instead.
 "Tahoma"="NanumGothic"
