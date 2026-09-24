@@ -37,10 +37,14 @@ readonly INSTALLER_URL=https://lk.kakaocdn.net/talkpc/talk/win32/x64/KakaoTalk_S
 readonly INSTALLER="$CACHE/KakaoTalk_Setup_x64.exe"
 readonly EXE="$PREFIX/drive_c/Program Files/Kakao/KakaoTalk/KakaoTalk.exe"
 
-# Wine does no scaling of its own. 144 = 96 * 1.5; set KAKAOTALK_DPI on a
-# machine that scales differently. The tray icon size hangs off the same
-# number -- see bin/kakaotalk-bottle for why it cannot simply be raised.
-readonly DPI=${KAKAOTALK_DPI:-144}
+# Unset, and deliberately. Wine's own default is 96 and the scale of the
+# screen is the compositor's business, not this package's -- winewayland is a
+# native Wayland client and is told. bin/kakaotalk-bottle pins 144 because it
+# was written for the XWayland path, where wine is handed the panel's real
+# pixels and a 96 DPI prefix comes out tiny; that reasoning does not carry
+# over. Set KAKAOTALK_DPI to override, and note that the tray icon size hangs
+# off the same number.
+readonly DPI=${KAKAOTALK_DPI:-}
 readonly GRAPHICS=${WINE_GRAPHICS:-wayland}
 
 export WINEPREFIX="$PREFIX"
@@ -216,9 +220,10 @@ PY
 }
 
 set_driver_and_dpi() {
-  step "pointing wine at the $GRAPHICS driver, at $DPI DPI"
+  step "pointing wine at the $GRAPHICS driver${DPI:+, at $DPI DPI}"
   wine reg add 'HKEY_CURRENT_USER\Software\Wine\Drivers' \
     /v Graphics /d "$GRAPHICS" /t REG_SZ /f >/dev/null 2>&1
+  [[ -n $DPI ]] || return 0
   wine reg add 'HKEY_CURRENT_USER\Control Panel\Desktop' \
     /v LogPixels /d "$DPI" /t REG_DWORD /f >/dev/null 2>&1
 }
