@@ -1,0 +1,58 @@
+#!/bin/bash
+# Fetch the current bundle and install it, for a user who has the shell
+# extension and not the app.
+#
+# The extension is the landing point: it is the part that has to be installed
+# by hand, since it lives in ~/.local/share/gnome-shell/extensions where a
+# sandboxed app cannot reach, and once it is there it can do the rest. So
+# this is what its indicator calls when nothing is installed yet.
+#
+# --user, so no root and no password. The runtime comes from flathub, which
+# is where nearly everyone already has it; if the remote is missing this says
+# so rather than failing halfway.
+#
+#   kakaotalk-install          fetch and install
+#   kakaotalk-install --check  say whether it is installed, and nothing else
+set -euo pipefail
+IFS=$'\n\t'
+
+readonly APP_ID=io.github.chaotic_ground.KakaoTalk
+readonly BUNDLE_URL=https://github.com/chaotic-ground/kakaotalk-on-wine/releases/latest/download/kakaotalk.flatpak
+readonly CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/kakaotalk-on-wine"
+
+if [[ ${1-} == --check ]]; then
+  flatpak info "$APP_ID" >/dev/null 2>&1
+  exit $?
+fi
+
+if [[ -n ${1-} ]]; then
+  echo "usage: ${0##*/} [--check]" >&2
+  exit 2
+fi
+
+if flatpak info "$APP_ID" >/dev/null 2>&1; then
+  echo "already installed"
+  exit 0
+fi
+
+# The bundle carries the app and not the runtime, so the runtime has to come
+# from somewhere. A user remote is enough and needs no root.
+if ! flatpak remotes --columns=name | grep -qx flathub; then
+  echo "adding flathub"
+  flatpak remote-add --user --if-not-exists flathub \
+    https://dl.flathub.org/repo/flathub.flatpakrepo
+fi
+
+mkdir -p "$CACHE"
+readonly BUNDLE="$CACHE/kakaotalk.flatpak"
+
+echo "downloading the bundle"
+# -C -: a half-finished download from a dropped connection resumes rather
+# than starting the seventy megabytes again.
+curl -fL --progress-bar -C - -o "$BUNDLE" "$BUNDLE_URL"
+
+echo "installing"
+flatpak install -y --user "$BUNDLE"
+
+rm -f "$BUNDLE"
+echo "done"

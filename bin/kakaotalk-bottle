@@ -556,6 +556,7 @@ install_shell_extension() {
   # this repo was cloned, so meet it at a fixed place instead.
   install -d "$HOME/.local/bin"
   ln -sf "$REPO/bin/kakaotalk-restart" "$HOME/.local/bin/kakaotalk-restart"
+  ln -sf "$REPO/bin/kakaotalk-install" "$HOME/.local/bin/kakaotalk-install"
 
   step "installing the $uuid shell extension"
   install -d "$dest"

@@ -65,6 +65,10 @@ import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 // the shell only ever sees the loader.
 
 const TAG = '[kakaotalk-popup]';
+// The flatpak this extension stands for. Checked by looking for its
+// directory rather than by running flatpak info: the menu asks on every
+// open, and the answer is a file that is either there or not.
+const APP_ID = 'io.github.chaotic_ground.KakaoTalk';
 const MARGIN = 16;
 // Wine gives its own windows these, but a menu arrives with no class at all,
 // so ownership is tracked by the pids these windows come from.
@@ -162,13 +166,33 @@ class TrayIndicator extends PanelMenu.Button {
             style_class: 'system-status-icon',
         }));
 
-        // The same two actions the app icon's right-click offers, for the
-        // same reason: KakaoTalk's own way out is its tray menu, and that
-        // menu does not open under Wine's Wayland driver. The app icon is
-        // in the grid or the dash; this is already in the panel, next to
-        // the thing it acts on.
-        this.menu.addAction('다시 시작', () => this._owner.restart());
-        this.menu.addAction('종료', () => this._owner.quit());
+        // Rebuilt every time it opens, because what belongs in it depends on
+        // whether the app is installed and that can change while the shell
+        // is running -- not least by this menu.
+        this.menu.connect('open-state-changed', (_menu, open) => {
+            if (open)
+                this._rebuild();
+        });
+        this._rebuild();
+    }
+
+    // This extension is the landing point. It is the part that has to be
+    // installed by hand -- a shell extension lives where no sandboxed app can
+    // put it -- so once it is here it can offer the rest rather than leaving
+    // someone to find a release page.
+    _rebuild() {
+        this.menu.removeAll();
+        if (this._owner.appInstalled()) {
+            // The same two actions the app icon's right-click offers, for the
+            // same reason: KakaoTalk's own way out is its tray menu, and that
+            // menu does not open under Wine's Wayland driver. The app icon is
+            // in the grid or the dash; this is already in the panel, next to
+            // the thing it acts on.
+            this.menu.addAction('다시 시작', () => this._owner.restart());
+            this.menu.addAction('종료', () => this._owner.quit());
+        } else {
+            this.menu.addAction('카카오톡 설치', () => this._owner.install());
+        }
     }
 
     // Not a button-press-event handler, which is what this was before the
@@ -208,6 +232,7 @@ export default class KakaoTalkPopup {
     enable() {
         this._pids = new Set();
         this._burst = null;
+        this._installed = undefined;
         this._config = DEFAULT_CONFIG;
         this._configPath = GLib.build_filenamev(
             [GLib.get_user_config_dir(), 'kakaotalk-popup.json']);
@@ -397,6 +422,12 @@ export default class KakaoTalkPopup {
 
         const tray = this._findTrayWindow();
         if (!tray) {
+            // Nothing installed, so there is nothing to start. Offering the
+            // install is the only useful thing a left click can do here.
+            if (!this.appInstalled()) {
+                this.install();
+                return;
+            }
             // No tray means the app is not running -- it is the one window
             // KakaoTalk keeps up the whole time. An indicator that sits there
             // doing nothing is worse than one that starts what it stands for,
@@ -790,6 +821,52 @@ export default class KakaoTalkPopup {
             this._lastRecover = now;
             console.log(`${TAG} tray window closed, recovering`);
             this._runHelper('--recover');
+        });
+    }
+
+    // Whether the flatpak is installed, as a fact the menu can be built
+    // from. Cached: this is asked on every menu open and a subprocess for
+    // each would be silly, and the one thing that changes it from under us
+    // is install() below, which clears it.
+    appInstalled() {
+        if (this._installed === undefined) {
+            const file = Gio.File.new_for_path(
+                GLib.build_filenamev([GLib.get_home_dir(), '.local', 'share',
+                                      'flatpak', 'app', APP_ID]));
+            const system = Gio.File.new_for_path(
+                GLib.build_filenamev(['/var', 'lib', 'flatpak', 'app', APP_ID]));
+            this._installed = file.query_exists(null) || system.query_exists(null);
+        }
+        return this._installed;
+    }
+
+    // Seventy megabytes over a network, so it says when it starts and says
+    // again when it is done. A menu item that appears to do nothing for two
+    // minutes is a menu item people press twice.
+    install() {
+        Main.notify('카카오톡', '설치를 시작합니다');
+        const helper = GLib.build_filenamev(
+            [GLib.get_home_dir(), '.local', 'bin', 'kakaotalk-install']);
+        let proc;
+        try {
+            proc = Gio.Subprocess.new([helper], Gio.SubprocessFlags.STDERR_PIPE);
+        } catch (e) {
+            Main.notify('카카오톡', `설치를 시작하지 못했습니다: ${e.message}`);
+            return;
+        }
+        proc.communicate_utf8_async(null, null, (subprocess, result) => {
+            let ok = false, err = '';
+            try {
+                [ok, , err] = subprocess.communicate_utf8_finish(result);
+                ok = subprocess.get_successful();
+            } catch (e) {
+                err = e.message;
+            }
+            this._installed = undefined;
+            if (ok)
+                Main.notify('카카오톡', '설치했습니다');
+            else
+                Main.notify('카카오톡', `설치에 실패했습니다: ${(err || '').trim().split('\n').pop()}`);
         });
     }
 

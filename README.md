@@ -8,6 +8,19 @@ git clone https://github.com/chaotic-ground/kakaotalk-on-wine
 kakaotalk-on-wine/bin/kakaotalk-bottle
 ```
 
+Or install the flatpak, which carries its own Wine -- patched, so emoji draw
+-- and needs nothing on the host besides flatpak itself:
+
+```sh
+curl -fLO https://github.com/chaotic-ground/kakaotalk-on-wine/releases/latest/download/kakaotalk.flatpak
+flatpak install --user kakaotalk.flatpak
+```
+
+The shell extension is worth having either way, and is the part that has to
+be installed by hand, since a sandboxed app cannot put anything in
+`~/.local/share/gnome-shell/extensions`. So it is the landing point: install
+it, and its panel indicator offers to fetch the rest.
+
 Idempotent: re-running fills in only what is missing. Close KakaoTalk first,
 or the registry steps crawl while it holds the prefix.
 
@@ -171,8 +184,13 @@ disable/enable instead of a logout.
   [kron4ek](https://github.com/Kron4ek/Wine-Builds) release and pins plain
   upstream Wine instead of the one Bottles ships, which is what you want
   before reporting anything upstream.
-- `bin/kakaotalk-restart` — behind the app icon's quit and restart actions.
-  Drops Wine's stale monitor record on the way past.
+- `bin/kakaotalk-restart` — behind the app icon's quit and restart actions,
+  and the extension's. Uses whichever of the two installs is present, flatpak
+  first. Drops Wine's stale monitor record on the way past.
+- `bin/kakaotalk-install` — fetches the current bundle and installs it for a
+  user, no root. What the indicator calls when nothing is installed yet.
+- `flatpak/` — the manifest and the launcher inside it. Built from the
+  release assets, so it stands on its own rather than needing this checkout.
 - `bin/wayland-screenshot` — capture through the desktop portal, for when the
   app's windows are no longer XWayland and nothing else can see them.
 - `bin/kakaotalk-hang-report` — thread states, and backtraces resolved to
