@@ -47,6 +47,18 @@ have_app() {
 # namespace, and a wine process that looks at another process across that
 # boundary takes the whole session down with it. See serve_control in
 # flatpak/kakaotalk.
+# Set while this script is stopping the app, and looked at by --recover.
+#
+# Closing the tray window is how the extension notices the app has been
+# stranded, and a stop closes it too -- so a stop looks exactly like the
+# accident it is meant to recover from. It used to be the extension's own
+# menu doing the stopping, and it stood itself down; now the stopping happens
+# here and out of its sight, so the marker has to be here as well.
+#
+# Under $XDG_RUNTIME_DIR, which is cleared between logins, so a marker left
+# by something that died cannot outlive the session it belonged to.
+readonly QUITTING=${XDG_RUNTIME_DIR:-/tmp}/kakaotalk-quitting
+
 ask_app() {
   local control=$HOME/.var/app/$APP_ID/data/control
   [[ -d ${control%/*} ]] || return 1
@@ -155,7 +167,18 @@ launch() {
   exec flatpak run --command=bottles-cli "$FLATPAK_ID" run -b "$BOTTLE" -p "$PROGRAM"
 }
 
+# The marker is set around the whole of it rather than by a RETURN trap,
+# which in bash fires by rules subtle enough to be worth not relying on.
 stop() {
+  local rc
+  : >"$QUITTING"
+  stop_now
+  rc=$?
+  rm -f "$QUITTING"
+  return $rc
+}
+
+stop_now() {
   # The tray outlives the client. explorer.exe is its own process and nothing
   # ends it when KakaoTalk goes, so a --quit that finds the app already gone
   # still has leftovers to clear -- and leaving them is what stacks trays up
@@ -227,6 +250,10 @@ case ${1-} in
     # then there is nothing to recover and resurrecting it would be wrong.
     sleep 3
     running || exit 0
+    # A stop in progress, which closes the tray window on its way and looks
+    # from outside exactly like the thing worth recovering from. Starting the
+    # app again here would race the stop and leave both of them dead.
+    [[ -f $QUITTING ]] && exit 0
     exec "$0"
     ;;
   "")

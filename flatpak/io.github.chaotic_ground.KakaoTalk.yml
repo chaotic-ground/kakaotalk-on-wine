@@ -106,7 +106,7 @@ modules:
       - type: archive
         strip-components: 0
         url: https://github.com/chaotic-ground/kakaotalk-on-wine/releases/download/wine-11.18-emoji/wine-11.18-emoji-wow64-x86_64.tar.xz
-        sha256: 3ab4b1857b1c78a7a97e5e62b9fdc6715ca056ab5fdbfe9562b55d493a8365f3
+        sha256: 32b90273844aecbd4af67a3d3c6f06f0426d7b2fca39e02d447c2dc8bd5132c9
 
   # The two faces the prefix cannot do without. Bundled rather than taken
   # from the host: a prefix with no Korean font draws every Hangul glyph as a

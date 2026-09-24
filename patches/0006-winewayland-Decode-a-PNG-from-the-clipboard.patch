@@ -1,0 +1,206 @@
+From: kakaotalk-on-wine
+Subject: [PATCH] winewayland: Decode a PNG from the clipboard
+
+A screenshot, or an image copied in a browser: what a compositor is
+handed for a picture is nearly always image/png, and a Windows app
+pasting one asks for CF_DIB. Nothing joined those. The driver passed the
+PNG through under a registered format named "PNG", which no ordinary
+app looks for, so pasting a screenshot did nothing at all.
+
+Decoded in the driver because there is nowhere tidier. The format
+synthesis that turns a CF_DIB into a CF_BITMAP lives in the server and
+knows only the builtin format ids; "PNG" is registered at runtime and
+cannot be one of those.
+
+Alpha is composited onto white rather than carried. A DIB has no agreed
+alpha channel -- the high byte of a 32-bit one is reserved and apps
+disagree about it -- and a screenshot with a rounded corner pasted onto
+black looks broken in a way nobody would think to blame a clipboard for.
+
+There is no encoder and nothing needs one: a clipboard format is offered
+under a single mime type, the first in the table that carries it, and
+for CF_DIB that is image/bmp.
+
+-lpng16 is hardcoded, which an upstream version would not be: configure
+finds libpng for the PE side only, so a unix-side check has to come
+first.
+---
+ dlls/winewayland.drv/Makefile.in           |   2 +-
+ dlls/winewayland.drv/wayland_data_device.c | 129 ++++++++++++++++++++-
+ 2 files changed, 128 insertions(+), 3 deletions(-)
+
+diff --git a/dlls/winewayland.drv/Makefile.in b/dlls/winewayland.drv/Makefile.in
+--- a/dlls/winewayland.drv/Makefile.in
++++ b/dlls/winewayland.drv/Makefile.in
+@@ -1,7 +1,7 @@
+ MODULE = winewayland.drv
+ UNIXLIB = winewayland.so
+ UNIX_CFLAGS = $(EGL_CFLAGS) $(WAYLAND_CLIENT_CFLAGS) $(WAYLAND_EGL_CFLAGS) $(XKBCOMMON_CFLAGS) $(XKBREGISTRY_CFLAGS)
+-UNIX_LIBS = -lwin32u $(WAYLAND_CLIENT_LIBS) $(WAYLAND_EGL_LIBS) $(XKBCOMMON_LIBS) $(XKBREGISTRY_LIBS) $(PTHREAD_LIBS) -lm
++UNIX_LIBS = -lwin32u $(WAYLAND_CLIENT_LIBS) $(WAYLAND_EGL_LIBS) $(XKBCOMMON_LIBS) $(XKBREGISTRY_LIBS) $(PTHREAD_LIBS) -lpng16 -lm
+ IMPORTS = user32 win32u
+ 
+ VER_FILEDESCRIPTION_STR = "Wine Wayland driver"
+diff --git a/dlls/winewayland.drv/wayland_data_device.c b/dlls/winewayland.drv/wayland_data_device.c
+--- a/dlls/winewayland.drv/wayland_data_device.c
++++ b/dlls/winewayland.drv/wayland_data_device.c
+@@ -29,6 +29,8 @@
+ #include <stdlib.h>
+ #include <unistd.h>
+ 
++#include <png.h>
++
+ #include "waylanddrv.h"
+ #include "wine/debug.h"
+ 
+@@ -59,7 +61,6 @@ struct wayland_data_offer
+ 
+ static HWND clipboard_hwnd;
+ static const WCHAR rich_text_formatW[] = {'R','i','c','h',' ','T','e','x','t',' ','F','o','r','m','a','t',0};
+-static const WCHAR pngW[] = {'P','N','G',0};
+ static const WCHAR jfifW[] = {'J','F','I','F',0};
+ static const WCHAR gifW[] = {'G','I','F',0};
+ static const WCHAR image_svg_xmlW[] = {'i','m','a','g','e','/','s','v','g','+','x','m','l',0};
+@@ -328,6 +329,128 @@ static void *import_image_bmp(void *data, size_t size, size_t *ret_size)
+     return ret;
+ }
+ 
++/* A screenshot, or an image copied in a browser: what a compositor is handed
++ * for a picture is nearly always image/png, and a Windows app pasting one
++ * asks for CF_DIB. Nothing joined those before -- the driver passed the PNG
++ * through under a registered format named "PNG", which no ordinary app looks
++ * for -- so pasting a screenshot into a Windows app did nothing at all.
++ *
++ * Decoded here rather than anywhere tidier because there is nowhere tidier:
++ * the format synthesis that turns a CF_DIB into a CF_BITMAP lives in the
++ * server and knows only the builtin format ids, and "PNG" is registered at
++ * runtime and cannot be one of those.
++ *
++ * Alpha is composited onto white. A DIB has no agreed alpha channel -- the
++ * high byte of a 32-bit one is "reserved" and apps disagree about it -- and a
++ * screenshot with a rounded corner pasted onto black looks broken in a way
++ * that is hard to attribute to a clipboard. */
++struct png_read_state
++{
++    const BYTE *data;
++    size_t size;
++    size_t offset;
++};
++
++static void png_read_from_memory(png_structp png, png_bytep out, png_size_t count)
++{
++    struct png_read_state *state = png_get_io_ptr(png);
++
++    if (state->offset + count > state->size)
++    {
++        png_error(png, "read past the end of the image");
++        return;
++    }
++    memcpy(out, state->data + state->offset, count);
++    state->offset += count;
++}
++
++static void *import_image_png(void *data, size_t size, size_t *ret_size)
++{
++    struct png_read_state state = {.data = data, .size = size};
++    png_structp png = NULL;
++    png_infop info = NULL;
++    png_bytep *rows = NULL;
++    BITMAPINFOHEADER *header;
++    unsigned int width, height, stride, y;
++    int bit_depth, color_type;
++    BYTE *ret = NULL, *pixels;
++
++    if (size < 8 || png_sig_cmp(data, 0, 8)) return NULL;
++
++    if (!(png = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL)))
++        return NULL;
++    if (!(info = png_create_info_struct(png))) goto done;
++    if (setjmp(png_jmpbuf(png)))
++    {
++        free(ret);
++        ret = NULL;
++        goto done;
++    }
++
++    png_set_read_fn(png, &state, png_read_from_memory);
++    png_read_info(png, info);
++
++    width = png_get_image_width(png, info);
++    height = png_get_image_height(png, info);
++    bit_depth = png_get_bit_depth(png, info);
++    color_type = png_get_color_type(png, info);
++
++    /* Everything down to eight-bit BGR, which is what a DIB holds. */
++    if (color_type == PNG_COLOR_TYPE_PALETTE) png_set_palette_to_rgb(png);
++    if (color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8) png_set_expand_gray_1_2_4_to_8(png);
++    if (png_get_valid(png, info, PNG_INFO_tRNS)) png_set_tRNS_to_alpha(png);
++    if (bit_depth == 16) png_set_strip_16(png);
++    if (color_type == PNG_COLOR_TYPE_GRAY || color_type == PNG_COLOR_TYPE_GRAY_ALPHA)
++        png_set_gray_to_rgb(png);
++    png_set_bgr(png);
++    /* Composite onto white and drop the channel, rather than leave a byte
++     * that the receiving app is free to read as opaque or as transparent. */
++    {
++        png_color_16 white = {0, 0xff, 0xff, 0xff, 0xff};
++        png_set_background(png, &white, PNG_BACKGROUND_GAMMA_SCREEN, 0, 1.0);
++    }
++    png_set_strip_alpha(png);
++    png_set_filler(png, 0, PNG_FILLER_AFTER);
++    png_read_update_info(png, info);
++
++    if (!width || !height || height > (~(size_t)0) / (width * 4)) goto done;
++
++    /* A DIB row is padded to four bytes, which for 32bpp it already is. */
++    stride = width * 4;
++    if (!(ret = calloc(1, sizeof(BITMAPINFOHEADER) + (size_t)stride * height))) goto done;
++
++    header = (BITMAPINFOHEADER *)ret;
++    header->biSize = sizeof(*header);
++    header->biWidth = width;
++    header->biHeight = height;
++    header->biPlanes = 1;
++    header->biBitCount = 32;
++    header->biCompression = BI_RGB;
++
++    pixels = ret + sizeof(*header);
++    if (!(rows = malloc(height * sizeof(*rows)))) goto done;
++    /* Bottom-up, which is how a DIB is stored and how libpng is not. */
++    for (y = 0; y < height; y++) rows[y] = pixels + (size_t)(height - 1 - y) * stride;
++
++    png_read_image(png, rows);
++
++    *ret_size = sizeof(BITMAPINFOHEADER) + (size_t)stride * height;
++
++done:
++    free(rows);
++    png_destroy_read_struct(&png, info ? &info : NULL, NULL);
++    return ret;
++}
++
++/* There is no encoder here, and nothing asks for one: a clipboard format is
++ * offered under a single mime type, the first in the table that carries it,
++ * and for CF_DIB that is image/bmp. */
++static void *export_image_png(void *data, size_t size, size_t *ret_size)
++{
++    WARN("cannot encode a PNG\n");
++    return NULL;
++}
++
+ static void *export_image_bmp(void *data, size_t size, size_t *ret_size)
+ {
+     BITMAPFILEHEADER *bfh;
+@@ -357,7 +480,9 @@ static struct data_device_format supported_formats[] =
+     {"text/rtf", 0, rich_text_formatW, export_data, import_data},
+     {"image/bmp", CF_DIB, NULL, export_image_bmp, import_image_bmp},
+     {"image/tiff", CF_TIFF, NULL, export_data, import_data},
+-    {"image/png", 0, pngW, export_data, import_data},
++    /* After image/bmp, so that a CF_DIB is offered out as a BMP, which this
++     * can write, rather than as a PNG, which it cannot. */
++    {"image/png", CF_DIB, NULL, export_image_png, import_image_png},
+     {"image/jpeg", 0, jfifW, export_data, import_data},
+     {"image/gif", 0, gifW, export_data, import_data},
+     {"image/svg+xml", 0, image_svg_xmlW, export_data, import_data},
+-- 
+2.55.0
+

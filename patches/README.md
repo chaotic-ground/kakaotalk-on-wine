@@ -40,9 +40,8 @@ moved across. One entry is enough because Firefox and GTK put `image/bmp` on
 the clipboard beside `image/png` -- worth checking with
 `wl-paste --list-types` before assuming it of another source.
 
-`image/png` is still not decoded, on either driver. That needs a decoder,
-which is a display driver's job in no sense at all, and is why this stops
-here.
+`image/png` needed a decoder and gets one in 0006, since GNOME's own
+screenshot offers nothing else.
 
 ## 0004 — the keyboard layout is the keyboard's
 
@@ -93,6 +92,31 @@ The evidence, from a program that asked Win32 rather than looking at the
 screen: the menu window exists, is `visible=1`, is 124x141 at a sensible
 place, and its owner is an `EVA_Window_Dblclk` that is 0x0 and `visible=0`.
 
+## 0006 — a PNG from the clipboard is decoded
+
+0003 covers what Firefox and GTK offer, and not what GNOME's screenshot does:
+that puts `image/png` on the clipboard and nothing else. So the PNG has to be
+decoded, and the driver is where it happens because there is nowhere tidier
+-- the format synthesis that turns a `CF_DIB` into a `CF_BITMAP` lives in the
+*server* and knows only the builtin format ids, while "PNG" is registered at
+runtime and can never be one of them.
+
+Three decisions worth knowing about:
+
+- **Alpha is composited onto white.** A DIB has no agreed alpha channel: the
+  high byte of a 32-bit one is reserved and applications disagree about it. A
+  screenshot with a rounded corner pasted onto black looks broken in a way
+  nobody would think to blame a clipboard for.
+- **`image/png` becomes `CF_DIB`** instead of the registered format named
+  "PNG" it used to arrive as. Nothing looks for that name.
+- **There is no encoder.** Nothing needs one: a clipboard format goes out
+  under a single mime type, the first in the table carrying it, and for
+  `CF_DIB` that is `image/bmp`.
+
+`-lpng16` is hardcoded in the driver's `Makefile.in`, which an upstream
+version would not do. Wine's configure looks for libpng for the PE side only
+-- `PNG_PE_LIBS` -- so a unix-side check would have to come first.
+
 ## Building it
 
 In a container, so the host keeps no build dependencies. About forty minutes
@@ -107,6 +131,8 @@ host libraries, which is why mingw32 is here and nothing else is.
 toolbox create -y --container wine-build
 toolbox run -c wine-build sudo dnf builddep -y wine
 toolbox run -c wine-build sudo dnf install -y mingw32-gcc mingw64-gcc
+# 0006 links the Wayland driver against the system libpng.
+toolbox run -c wine-build sudo dnf install -y libpng-devel
 
 curl -fsSLO https://dl.winehq.org/wine/source/11.x/wine-11.18.tar.xz
 tar -xf wine-11.18.tar.xz

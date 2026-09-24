@@ -109,6 +109,12 @@ nobody repeats the search:
   the popup's shadow, which Wine draws as a plain white rectangle around the
   message rather than a shadow under it. See `_hideChrome`.
 
+- **Pasting a picture** needed two patches, in `patches/`. Wine's Wayland
+  driver had no `CF_DIB` in its clipboard table at all, so an image copied
+  anywhere reached a Windows app under a name no Windows app looks for. 0003
+  adds the `image/bmp` mapping the X11 driver has had for years, which covers
+  Firefox and GTK; 0006 decodes `image/png`, which is all GNOME's own
+  screenshot offers.
 - **Two-finger scroll** needed a patch, in `patches/`. Wine acts on
   `wl_pointer.axis_value120`, which is a wheel's event, and left
   `wl_pointer.axis` an empty function -- and a touchpad has no notches, so a
