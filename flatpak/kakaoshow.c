@@ -17,7 +17,9 @@
  *
  *   kakaoshow          post it
  *   kakaoshow --menu   right-click the tray icon, which makes the app put up
- *                      its own menu at the pointer
+ *                      its own menu
+ *   kakaoshow --menu-close
+ *                      dismiss it
  *   kakaoshow --list   print every top-level window of the app, to find out
  *                      what to post it to
  *
@@ -52,6 +54,23 @@ static HWND tray_icon;
  *
  * Posted and not sent: TrackPopupMenu runs a modal loop, and a SendMessage
  * would wait for a menu that is dismissed by a hand, not by us. */
+/* A menu opened this way is never dismissed by itself. Clicking elsewhere on
+ * the desktop is how a menu normally goes, and a click that lands on another
+ * Wayland client never reaches wine at all, so the menu sits there for good
+ * -- and a second right-click stacks another one on top.
+ *
+ * WM_CANCELMODE posted to the menu window is what NtUserEndMenu does from
+ * inside, and the menu's own loop reads it out of its queue, so it works from
+ * out here too. */
+static BOOL CALLBACK cancel_menu( HWND hwnd, LPARAM param )
+{
+    WCHAR cls[64] = {0};
+
+    GetClassNameW( hwnd, cls, 64 );
+    if (!lstrcmpW( cls, L"#32768" )) PostMessageW( hwnd, WM_CANCELMODE, 0, 0 );
+    return TRUE;
+}
+
 static BOOL CALLBACK find_tray( HWND hwnd, LPARAM param )
 {
     WCHAR cls[64] = {0};
@@ -119,8 +138,17 @@ static BOOL CALLBACK visit( HWND hwnd, LPARAM param )
 
 int main( int argc, char **argv )
 {
+    if (argc > 1 && !strcmp( argv[1], "--menu-close" ))
+    {
+        EnumWindows( cancel_menu, 0 );
+        return 0;
+    }
+
     if (argc > 1 && !strcmp( argv[1], "--menu" ))
     {
+        /* Whatever is already open, before adding to it. */
+        EnumWindows( cancel_menu, 0 );
+
         EnumWindows( find_tray, 0 );
         if (!tray_icon)
         {

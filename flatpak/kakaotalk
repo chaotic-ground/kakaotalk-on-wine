@@ -67,9 +67,11 @@ case ${1-} in
   --quit) mode=quit ;;
   --show) mode=show ;;
   --menu) mode=menu ;;
+  --menu-close) mode=menu-close ;;
   --restart) mode=restart ;;
   "") ;;
-  *) echo "usage: ${0##*/} [--reinstall|--setup|--quit|--show|--menu|--restart]" >&2; exit 2 ;;
+  *) echo "usage: ${0##*/} [--reinstall|--setup|--quit|--show|--menu|--menu-close|--restart]" >&2
+     exit 2 ;;
 esac
 
 step() { echo "==> $*"; }
@@ -82,7 +84,8 @@ step() { echo "==> $*"; }
 # bin/kakaotalk-restart write it directly and never start an instance at all.
 # These two exist so that `flatpak run <app> --show` does what it looks like
 # it does.
-if [[ $mode == show ]] || [[ $mode == quit ]] || [[ $mode == menu ]]; then
+if [[ $mode == show ]] || [[ $mode == quit ]] || [[ $mode == menu ]] ||
+   [[ $mode == menu-close ]]; then
   printf '%s\n' "$mode" >"$CONTROL"
   exit 0
 fi
@@ -350,6 +353,11 @@ serve_control() {
       # appears at the pointer, which is where the indicator that asked for
       # it is. See flatpak/kakaoshow.c.
       menu) timeout 60 "$WINE" "$SHARE/kakaoshow.exe" --menu >/dev/null 2>&1 || true ;;
+      # Nothing dismisses that menu by itself: a click elsewhere on the
+      # desktop lands on another Wayland client and never reaches wine, so
+      # the menu would sit there for good. The extension watches for it
+      # losing the focus and says so.
+      menu-close) timeout 60 "$WINE" "$SHARE/kakaoshow.exe" --menu-close >/dev/null 2>&1 || true ;;
       # Asking, and only asking. taskkill without /f sends WM_CLOSE, which is
       # what a Windows app expects and what gives KakaoTalk the chance to
       # write its session out; killing it outright costs a login that has to

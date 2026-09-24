@@ -129,11 +129,14 @@ const POPUP_TITLE = 'KakaoTalkShadowWnd';
 // thing itself. See _findMainWindow.
 const MAIN_MIN_HEIGHT = 240;
 
-// How long after asking for the app's menu a new window is taken to be that
-// menu. It arrives about a second later; the rest is slack. Nothing here
-// needs to be right about a window that arrives afterwards, because by then
-// the menu holds the focus and no second focus event comes.
-const MENU_GRACE_US = 5 * 1000 * 1000;
+// How long after asking for the app's menu a new window may be that menu. It
+// arrives about a second later; the rest is slack. Short, because during it a
+// message popup would be mistaken for the menu and dragged to the pointer --
+// which happened, with a notification landing under the panel indicator.
+// The expectation is also spent on the first window that takes it, and does
+// not apply while a notification is being assembled, so this is the last
+// line rather than the only one.
+const MENU_GRACE_US = 3 * 1000 * 1000;
 
 // A restart destroys the tray window on its way, which would look exactly
 // like the thing being recovered from. Long enough to cover a restart, short
@@ -257,6 +260,8 @@ export default class KakaoTalkPopup {
         this._tray = [];
         this._hidden = new Set();
         this._menuUntil = 0;
+        this._menuAt = null;
+        this._menuPlaced = false;
         this._installed = undefined;
         this._config = DEFAULT_CONFIG;
         this._configPath = GLib.build_filenamev(
@@ -798,9 +803,12 @@ export default class KakaoTalkPopup {
 
         // The menu we just asked for is not part of any notification, and
         // putting it in the corner with one would be a poor way to answer a
-        // right-click.
-        if (this._expectingMenu() && this._isPopupWindow(window))
+        // right-click. It goes under the click instead.
+        if (this._expectingMenu() && this._isPopupWindow(window) &&
+            !this._menuPlaced) {
+            this._placeMenu(window);
             return;
+        }
 
         // No rule of its own, which does not mean it should be left alone.
         // See _joinGroup.
@@ -1020,11 +1028,89 @@ export default class KakaoTalkPopup {
         // was seen. Nothing about the window says which it is -- but we
         // asked for this one, so remember that we did.
         this._menuUntil = GLib.get_monotonic_time() + MENU_GRACE_US;
+        // Where the click was, not where the pointer is when the menu
+        // finally arrives about a second later. A menu belongs under the
+        // thing that opened it, and by then the pointer has often moved on.
+        const [x, y] = global.get_pointer();
+        this._menuAt = [x, y];
+        this._menuPlaced = false;
         this._askApp('menu');
     }
 
+    // A window is the menu if we asked for one just now, and a notification
+    // is not already being assembled around it.
+    //
+    // "Being assembled" means a shadow has been seen and matched a rule, not
+    // merely that a group object exists. The weaker test was worse than no
+    // test: a group is kept alive by anything joining it, so a menu that
+    // failed this went on to join the group, which extended it, which made
+    // the next menu fail too -- and each one was then placed by the
+    // notification rule, in the corner. Three right-clicks, one menu in the
+    // right place and two in the bottom corner.
     _expectingMenu() {
-        return GLib.get_monotonic_time() < this._menuUntil;
+        if (GLib.get_monotonic_time() >= this._menuUntil)
+            return false;
+        if (!this._burst || GLib.get_monotonic_time() > this._burst.until)
+            return true;
+        return !this._burst.rule;
+    }
+
+    // A Wayland client cannot place its own toplevel, and this menu is one --
+    // winewayland has no xdg_popup, and could not use it here anyway, since
+    // a popup needs a mapped parent surface and the window that owns this
+    // menu is hidden. So the compositor puts it wherever it likes, which is
+    // the middle of the screen, cascading a little further down on each
+    // opening. Out here is the one place that can say otherwise.
+    _placeMenu(window) {
+        // One ask, one menu. A second window inside the same grace window is
+        // not the menu -- the menu is already up -- and a message popup is
+        // the likeliest thing for it to be, so it must not be dragged to
+        // where the click was. Only the placing is spent this way: the focus
+        // handling keeps its hands off for the whole grace window, since the
+        // two arrive in an order this cannot count on.
+        if (this._menuPlaced) return;
+        this._menuPlaced = true;
+
+        const work = window.get_work_area_current_monitor();
+        const rect = window.get_frame_rect();
+        const [x, y] = this._menuAt ?? global.get_pointer();
+
+        window.move_frame(false,
+            Math.max(work.x, Math.min(x, work.x + work.width - rect.width)),
+            Math.max(work.y, Math.min(y, work.y + work.height - rect.height)));
+        if (this._config.log)
+            console.log(`${TAG} menu -> ${x},${y}`);
+
+        this._watchMenu(window);
+    }
+
+    // Nothing dismisses that menu by itself. A click elsewhere is how a menu
+    // normally goes, and a click that lands on another Wayland client never
+    // reaches wine, so the menu sits there until something says otherwise --
+    // and the next right-click would stack another on top of it.
+    //
+    // So this is the click landing elsewhere, reported from the one place
+    // that can see it happen.
+    _watchMenu(window) {
+        let done = false;
+        const stop = () => {
+            if (done) return;
+            done = true;
+            global.display.disconnect(id);
+        };
+
+        const id = global.display.connect('notify::focus-window', () => {
+            if (global.display.focus_window === window)
+                return;
+            stop();
+            this._askApp('menu-close');
+        });
+        // Tracked so disable() lets go of it: this hangs off the display,
+        // which outlives us, and the menu it watches may never close.
+        this._tray.push({obj: global.display, id});
+
+        // Or the menu goes on its own, by something being chosen in it.
+        window.connect('unmanaged', stop);
     }
 
     _askApp(word) {
