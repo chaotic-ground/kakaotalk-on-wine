@@ -18,6 +18,25 @@
 #
 # KakaoTalk itself is not here and cannot be: it is Kakao's to distribute.
 # The launcher fetches the installer on first run.
+#
+# Building it, and then the bundle that goes on a release:
+#
+#   flatpak run org.flatpak.Builder --user --install --force-clean \
+#     build-dir io.github.chaotic_ground.KakaoTalk.yml
+#   flatpak run org.flatpak.Builder --force-clean --repo=repo \
+#     build-dir io.github.chaotic_ground.KakaoTalk.yml
+#   flatpak build-bundle repo kakaotalk.flatpak io.github.chaotic_ground.KakaoTalk
+#
+# Two builds and not one, and that is the trap: --install does not write
+# --repo, and --repo does not install. A repo left over from an earlier build
+# says nothing about it -- build-bundle succeeds and hands back seventy
+# megabytes of the version before last. Check what came out rather than
+# trusting it:
+#
+#   grep -c <something you just added> build-dir/files/bin/kakaotalk
+#
+# It is the same shape as the module cache described in patches/README.md:
+# flatpak-builder is happy to succeed with contents nobody asked for.
 app-id: io.github.chaotic_ground.KakaoTalk
 runtime: org.freedesktop.Platform
 runtime-version: '25.08'
