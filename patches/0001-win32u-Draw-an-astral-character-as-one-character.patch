@@ -1,0 +1,277 @@
+From: kakaotalk-on-wine
+Subject: [PATCH] win32u: Draw an astral character as one character
+
+Emoji come out as a pair of empty boxes. Three things have to be wrong at
+once for that, and they are, so fixing any one of them alone changes nothing
+-- which is why a long search through font substitutions, replacements and
+link keys never moved it.
+
+ExtTextOutW takes UTF-16 and win32u walks it one code unit at a time, so
+U+1F33E is looked up as U+D83C and then as U+DF3E. Neither is in any font's
+cmap and both come back as the missing glyph. Measured, drawing a message in
+KakaoTalk under WINEDEBUG=+font:
+
+    NtGdiExtTextOutW 0xa410226, 120, 267, 00001004,
+        (120,267)-(154,288), L"\d83c\df3e", 2, (nil))
+
+No ETO_GLYPH_INDEX, so these are characters; no dx, so the advances come
+from the glyph metrics. The loops that split the string are the ones that
+have to stop splitting it in the middle of a character: render_string draws,
+get_total_extents and the nulldrv path measure and draw, and
+font_GetTextExtentExPoint measures. A pair is one character, so it is
+measured once; both of its code units still get an entry in dxs, because the
+caller sized that array by the length of the string.
+
+Composing it is not enough on its own. NtGdiGetGlyphOutline masks its
+character with 0xffff before passing it on, so a composed U+1F33E arrives as
+U+F33E -- which no font has either. The mask is worth keeping for a caller
+that passes a WCHAR with rubbish in the high half; it is not worth applying
+to a codepoint that is plainly astral. This is the step bug 53929 does not
+mention, and is where a fix that only composes the pair still fails.
+
+And the glyph cache is indexed by the character and paged over a table sized
+for 0x10000, so an astral codepoint indexes past the end of it: U+1F33E asks
+for page 499 of 256. Sizing the table for the whole of Unicode costs
+pointers, not glyphs -- the pages themselves are still allocated on first
+use.
+
+Nothing below the walk needed changing. get_glyph_index passes its UINT
+through to FT_Get_Char_Index, which takes an FT_ULong, and a cmap format 12
+answers for the astral planes.
+
+ETO_GLYPH_INDEX is left alone throughout: there the array holds glyph
+numbers, and one in the surrogate range is a glyph number that merely looks
+like one.
+
+Tested with a program that asks for the outline and reports its size, so the
+answer is a number rather than a look at a window. Before, U+1F33E came back
+as 88 bytes in a 13x22 box, the notdef; after, 3144 bytes in a 37x33 box, and
+the same glyph whether the emoji font is selected directly or reached through
+a font link. Colour emoji stay monochrome -- win32u's text path has no colour
+glyph support at all, which is a separate and much larger matter.
+
+Wine bug: https://bugs.winehq.org/show_bug.cgi?id=53929
+---
+--- a/dlls/win32u/ntgdi_private.h
++++ b/dlls/win32u/ntgdi_private.h
+@@ -645,4 +645,33 @@
+ 
+ void set_gdi_client_ptr( HGDIOBJ handle, void *ptr );
+ 
++
++/* Combine a surrogate pair into the character it stands for.
++ *
++ * ExtTextOutW takes UTF-16 and the loops that draw it walk one code unit at a
++ * time, so without this an astral character is looked up as each of its two
++ * halves -- U+D83C and U+DF3E rather than U+1F33E -- and neither half is in
++ * any font's cmap. Both come back as the missing glyph, which is the pair of
++ * boxes every emoji draws as, and no font link can help because the codepoint
++ * the linked font would answer for is never assembled.
++ *
++ * Returns the number of code units the character occupies, so the caller can
++ * step over both halves rather than drawing the second one again.
++ *
++ * Never under ETO_GLYPH_INDEX: there the array holds glyph numbers, and one
++ * in the surrogate range is a glyph number that merely looks like one.
++ */
++static inline UINT decode_utf16_char( const WCHAR *str, UINT count, UINT i, UINT flags, UINT *ch )
++{
++    if (!(flags & ETO_GLYPH_INDEX) &&
++        str[i] >= 0xd800 && str[i] <= 0xdbff &&
++        i + 1 < count && str[i + 1] >= 0xdc00 && str[i + 1] <= 0xdfff)
++    {
++        *ch = 0x10000 + ((str[i] - 0xd800) << 10) + (str[i + 1] - 0xdc00);
++        return 2;
++    }
++    *ch = str[i];
++    return 1;
++}
++
+ #endif /* __WINE_NTGDI_PRIVATE_H */
+--- a/dlls/win32u/font.c
++++ b/dlls/win32u/font.c
+@@ -4239,6 +4239,7 @@
+ {
+     struct font_physdev *physdev = get_font_dev( dev );
+     INT i, pos;
++    UINT len = 1;
+     ABC abc;
+ 
+     if (!physdev->font)
+@@ -4250,11 +4251,20 @@
+     TRACE( "%p, %s, %d\n", physdev->font, debugstr_wn(str, count), count );
+ 
+     pthread_mutex_lock( &font_lock );
+-    for (i = pos = 0; i < count; i++)
++    for (i = pos = 0; i < count; i += len)
+     {
+-        get_glyph_outline( physdev->font, str[i], GGO_METRICS, NULL, &abc, 0, NULL, NULL );
++        UINT ch;
++
++        /* A surrogate pair is one character and is measured once. Both of
++         * its code units still get an entry, because the caller sized the
++         * array by the length of the string and reads dxs[count - 1] as the
++         * total; giving the second half the same running position adds no
++         * width and keeps the array the length it promised. */
++        len = decode_utf16_char( str, count, i, 0, &ch );
++        get_glyph_outline( physdev->font, ch, GGO_METRICS, NULL, &abc, 0, NULL, NULL );
+         pos += abc.abcA + abc.abcB + abc.abcC;
+         dxs[i] = pos;
++        if (len == 2) dxs[i + 1] = pos;
+     }
+     pthread_mutex_unlock( &font_lock );
+     return TRUE;
+@@ -5523,15 +5533,17 @@
+ static RECT get_total_extents( HDC hdc, INT x, INT y, UINT flags, UINT aa_flags,
+                                LPCWSTR str, UINT count, const INT *dx )
+ {
+-    UINT i;
++    UINT i, len = 1;
+     RECT rect, bounds;
+ 
+     reset_bounds( &bounds );
+-    for (i = 0; i < count; i++)
++    for (i = 0; i < count; i += len)
+     {
+         GLYPHMETRICS metrics;
++        UINT ch;
+ 
+-        if (get_glyph_bitmap( hdc, str[i], flags, aa_flags, &metrics, NULL )) continue;
++        len = decode_utf16_char( str, count, i, flags, &ch );
++        if (get_glyph_bitmap( hdc, ch, flags, aa_flags, &metrics, NULL )) continue;
+ 
+         rect.left   = x + metrics.gmptGlyphOrigin.x;
+         rect.top    = y - metrics.gmptGlyphOrigin.y;
+@@ -5545,8 +5557,13 @@
+             {
+                 x += dx[ i * 2 ];
+                 y += dx[ i * 2 + 1];
++                if (len == 2)
++                {
++                    x += dx[ i * 2 + 2 ];
++                    y += dx[ i * 2 + 3 ];
++                }
+             }
+-            else x += dx[ i ];
++            else x += (len == 2) ? dx[ i ] + dx[ i + 1 ] : dx[ i ];
+         }
+         else
+         {
+@@ -5614,7 +5631,7 @@
+                          LPCWSTR str, UINT count, const INT *dx )
+ {
+     DC *dc = get_nulldrv_dc( dev );
+-    UINT i;
++    UINT i, len = 1;
+     DWORD err;
+     HGDIOBJ orig;
+     HPEN pen;
+@@ -5718,12 +5735,14 @@
+     pen = NtGdiCreatePen( PS_SOLID, 1, dc->attr->text_color, NULL );
+     orig = NtGdiSelectPen( dev->hdc, pen );
+ 
+-    for (i = 0; i < count; i++)
++    for (i = 0; i < count; i += len)
+     {
+         GLYPHMETRICS metrics;
+         struct gdi_image_bits image;
++        UINT ch;
+ 
+-        err = get_glyph_bitmap( dev->hdc, str[i], flags, GGO_BITMAP, &metrics, &image );
++        len = decode_utf16_char( str, count, i, flags, &ch );
++        err = get_glyph_bitmap( dev->hdc, ch, flags, GGO_BITMAP, &metrics, &image );
+         if (err) continue;
+ 
+         if (image.ptr) draw_glyph( dc, x, y, &metrics, &image, (flags & ETO_CLIPPED) ? rect : NULL );
+@@ -5735,8 +5754,13 @@
+             {
+                 x += dx[ i * 2 ];
+                 y += dx[ i * 2 + 1];
++                if (len == 2)
++                {
++                    x += dx[ i * 2 + 2 ];
++                    y += dx[ i * 2 + 3 ];
++                }
+             }
+-            else x += dx[ i ];
++            else x += (len == 2) ? dx[ i ] + dx[ i + 1 ] : dx[ i ];
+         }
+         else
+         {
+@@ -6235,7 +6259,18 @@
+     if(!dc) return GDI_ERROR;
+ 
+     dev = GET_DC_PHYSDEV( dc, pGetGlyphOutline );
+-    ret = dev->funcs->pGetGlyphOutline( dev, ch & 0xffff, format, metrics, size, buffer, mat2 );
++    /* Masked to 16 bits only when it is a character, and only within the BMP.
++     * The mask is there because a caller may pass a full WCHAR with rubbish in
++     * the high half, but applied to everything it also throws away the top of
++     * an astral codepoint -- U+1F33E arrives as U+F33E, which no font has, so
++     * the glyph comes back as the missing one. That is the last step of the
++     * path a surrogate pair travels: composed by the caller, looked up here,
++     * and until now truncated in between.
++     *
++     * Not under GGO_GLYPH_INDEX, where ch is a glyph number and its width is
++     * the font's business rather than Unicode's. */
++    if ((format & GGO_GLYPH_INDEX) || ch < 0x10000 || ch > 0x10ffff) ch &= 0xffff;
++    ret = dev->funcs->pGetGlyphOutline( dev, ch, format, metrics, size, buffer, mat2 );
+     release_dc_ptr( dc );
+     return ret;
+ }
+--- a/dlls/win32u/dibdrv/graphics.c
++++ b/dlls/win32u/dibdrv/graphics.c
+@@ -45,7 +45,11 @@
+ };
+ 
+ #define GLYPH_CACHE_PAGE_SIZE  0x100
+-#define GLYPH_CACHE_PAGES      (0x10000 / GLYPH_CACHE_PAGE_SIZE)
++/* The whole of Unicode, not just the BMP: the cache is indexed by the
++ * character, so an astral codepoint asks for a page past the end of a table
++ * sized for 0x10000 -- U+1F33E wants page 499 of 256. Only the page table
++ * grows; the pages themselves are still allocated on first use. */
++#define GLYPH_CACHE_PAGES      (0x110000 / GLYPH_CACHE_PAGE_SIZE)
+ 
+ struct cached_font
+ {
+@@ -811,7 +815,7 @@
+                            UINT flags, const WCHAR *str, UINT count, const INT *dx,
+                            const struct clipped_rects *clipped_rects, RECT *bounds )
+ {
+-    UINT i;
++    UINT i, len = 1;
+     struct cached_glyph *glyph;
+     dib_info glyph_dib;
+     DWORD text_color;
+@@ -830,10 +834,13 @@
+     else
+         get_aa_ranges( dib->funcs->pixel_to_colorref( dib, text_color ), intensity.ranges );
+ 
+-    for (i = 0; i < count; i++)
++    for (i = 0; i < count; i += len)
+     {
+-        if (!(glyph = get_cached_glyph( font, str[i], flags )) &&
+-            !(glyph = cache_glyph_bitmap( dc, font, str[i], flags ))) continue;
++        UINT ch;
++
++        len = decode_utf16_char( str, count, i, flags, &ch );
++        if (!(glyph = get_cached_glyph( font, ch, flags )) &&
++            !(glyph = cache_glyph_bitmap( dc, font, ch, flags ))) continue;
+ 
+         glyph_dib.width       = glyph->metrics.gmBlackBoxX;
+         glyph_dib.height      = glyph->metrics.gmBlackBoxY;
+@@ -850,9 +857,14 @@
+             {
+                 x += dx[ i * 2 ];
+                 y += dx[ i * 2 + 1];
++                if (len == 2)
++                {
++                    x += dx[ i * 2 + 2 ];
++                    y += dx[ i * 2 + 3 ];
++                }
+             }
+             else
+-                x += dx[ i ];
++                x += (len == 2) ? dx[ i ] + dx[ i + 1 ] : dx[ i ];
+         }
+         else
+         {

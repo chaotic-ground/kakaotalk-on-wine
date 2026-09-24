@@ -11,8 +11,8 @@ kakaotalk-on-wine/bin/kakaotalk-bottle
 Idempotent: re-running fills in only what is missing. Close KakaoTalk first,
 or the registry steps crawl while it holds the prefix.
 
-Tested on Fedora 43, GNOME 49 Wayland, Bottles 67, Wine 11.0,
-KakaoTalk 26.8 (64-bit).
+Tested on Fedora 43, GNOME 49 Wayland, Bottles 67, Wine 11.0 and a patched
+11.18, KakaoTalk 26.8 (64-bit).
 
 ## What it does
 
@@ -39,50 +39,36 @@ download page; the one every search result hands you is the 32-bit one at
 | New-message popups, bottom right | works, via a shell extension |
 | The leftover window a notification strands | hidden, via the extension |
 | Menus, tooltips, dialogs in Korean | works |
-| Emoji | **boxes** |
+| Emoji | works, **with a patched Wine** (`patches/`); monochrome |
 | The window coming back to the front by itself | **it does not** |
 | Two-finger scroll | **does not reach the app** |
 | Tray icon right-click menu | **nothing happens** |
 | Alt-tab label | says "Bottles" |
 
-The five that do not work are Wine's or Wayland's, not settings. Each is
+The rest are Wine's or Wayland's, not settings. Each is
 written up where the code deals with it, along with what was ruled out, so
 nobody repeats the search:
 
-- **Emoji** cannot be fixed from out here, and the reason is measurable. Wine
-  looks a glyph up one UTF-16 code unit at a time, so an astral character
-  arrives as its two surrogate halves and is looked up as each of them
-  separately. Drawing 🎁 in the prefix's own notepad under `WINEDEBUG=+font`:
+- **Emoji** need a patched Wine, and there is one in `patches/`. Three things
+  were wrong at once, which is why no arrangement of fonts, substitutions or
+  link keys ever moved it: Wine looks a glyph up one UTF-16 code unit at a
+  time, so an astral character is looked up as each of its surrogate halves;
+  `NtGdiGetGlyphOutline` masks the character to 16 bits, so composing the
+  pair is not enough on its own; and the glyph cache is sized for the BMP, so
+  an astral codepoint indexes past the end of it. Upstream knows about the
+  first -- [bug 53929](https://bugs.winehq.org/show_bug.cgi?id=53929), open
+  since 2022 -- and not the second.
 
-  ```
-  NtGdiGetGlyphIndicesW (hdc, L"\d83c", 1, ...)
-  NtGdiGetGlyphIndicesW (hdc, L"\df81", 1, ...)
-  ```
+  One finding survives without the patch and was worth the day it took: a
+  font link is keyed on the family name Wine actually uses, and for
+  NanumGothic.ttf that is the Korean 나눔고딕. The file carries both names,
+  `create_family` turns whichever comes second into a substitution for the
+  first with nothing in the registry to show for it, and a link keyed on a
+  substituted name is discarded with `SystemLink entry for substituted font,
+  ignoring`. `link_emoji_font` keys on 나눔고딕, and without that the patch
+  would draw a notdef from a font that was never asked.
 
-  U+D83C and U+DF81 are in no font's cmap, both come back as the missing
-  glyph, and that is the pair of boxes each emoji shows as. `win32u/font.c`
-  contains no surrogate handling at all -- no `surrogate`, no `0xd800`, no
-  `0x10000` -- so the lookup never sees U+1F381 and no font link can supply
-  it. Where the two halves ought to be joined is the next thing to find out;
-  that they are not is settled.
-
-  Which makes a long search make sense in hindsight. Fonts were installed,
-  substituted, linked under the app's face name and under others, and none of
-  it moved: the fallback was never the thing failing. Worth keeping one
-  finding from that search, because it cost a day on its own and is true
-  regardless: a font link is keyed on the family name Wine actually uses, and
-  for NanumGothic.ttf that is the Korean 나눔고딕, not NanumGothic. The file
-  carries both names, whichever comes second becomes a substitution for the
-  first -- `create_family` registers that itself, with nothing in the
-  registry to show for it -- and a link keyed on a substituted name is
-  discarded:
-
-  ```
-  L"NanumGothic": SystemLink entry for substituted font, ignoring
-  ```
-
-  See `link_emoji_font`, which keys on 나눔고딕 and is now correct without
-  being useful.
+  Colour emoji stay monochrome either way. See `patches/README.md`.
 - **The window does not come back by itself.** Close the chat list with its
   X, then wait for a message: clicking the tray restores the window and
   nothing appears. It is not hiding a failure. Traced, the app takes the
@@ -198,6 +184,9 @@ disable/enable instead of a logout.
 - `bin/kakaotalk-trace` — runs the app under `WINEDEBUG=+msg`, keeping the
   last of the firehose in a ring. It is what turned guesses about the window
   into the `ShowWindow`/`set_foreground_window` sequence above.
+- `patches/` — Wine changes upstream does not have, with what they fix and
+  how to build them. Not part of the setup: without them the app works, minus
+  emoji.
 - `config/kakaotalk-korean.reg` — UI language and Latin font substitutions,
   applied as a Bottles registry rule so a runner swap cannot undo it.
 - `config/kakaotalk-popup.json` — rules for the extension below.
