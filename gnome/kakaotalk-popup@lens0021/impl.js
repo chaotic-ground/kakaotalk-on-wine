@@ -108,6 +108,9 @@ const DEFAULT_CONFIG = {
     // Hide the popup's furniture: the shadow, and the strip a notification
     // leaves behind. Neither carries the message. See _hideChrome.
     hide_popup_chrome: true,
+    // Put what the app draws over its own window back over it -- the date
+    // that appears while a conversation is scrolled. See _placeOverlay.
+    place_overlays: true,
 };
 
 // How long the virtual click holds the button down.
@@ -128,6 +131,19 @@ const POPUP_TITLE = 'KakaoTalkShadowWnd';
 // Below this, a window claiming to be 카카오톡 is a leftover rather than the
 // thing itself. See _findMainWindow.
 const MAIN_MIN_HEIGHT = 240;
+
+// Above this, an owned untitled window is part of a notification; below it,
+// it is something the app draws over its own window, like the date that
+// appears while a conversation is scrolled. Measured: a notification's
+// shadow is 318 wide and its message not much less, while the date is 82.
+// See _placeOverlay.
+const OVERLAY_MAX_WIDTH = 200;
+
+// Where in the window it belongs over: centred, and down far enough to clear
+// the room's header. A twelfth of the height is what that comes to at the
+// sizes this is seen at. The app knows the real answer and the compositor
+// cannot ask it, so this is near rather than right.
+const OVERLAY_TOP_FRACTION = 0.12;
 
 // How long after asking for the app's menu a new window may be that menu. It
 // arrives about a second later; the rest is slack. Short, because during it a
@@ -398,6 +414,62 @@ export default class KakaoTalkPopup {
         if (!this._pids?.has(window.get_pid()))
             return false;
         return window.get_frame_rect().height < MAIN_MIN_HEIGHT;
+    }
+
+    // Something the app draws over its own window rather than a piece of a
+    // notification. Told apart by width, which is the one thing that
+    // separates them cleanly: both are owned by the app and neither has a
+    // title to go on.
+    _isOverlay(window) {
+        if (!this._config.place_overlays)
+            return false;
+        if (window.get_title() !== '')
+            return false;
+        const rect = window.get_frame_rect();
+        return rect.width < OVERLAY_MAX_WIDTH && rect.height < MAIN_MIN_HEIGHT;
+    }
+
+    // Over the window it belongs to, which the compositor will not do by
+    // itself: a Wayland client cannot place its own toplevel, and this is
+    // one. It arrives wherever the compositor felt like putting it, which
+    // for the date while scrolling was several hundred pixels away from the
+    // conversation it described.
+    //
+    // The window it belongs to is the one that had the focus until this took
+    // it, which while scrolling a conversation is that conversation. Falling
+    // back to the main window covers the case where nothing was focused.
+    _placeOverlay(window) {
+        const over = this._overlayParent();
+        if (!over)
+            return;
+
+        const parent = over.get_frame_rect();
+        const rect = window.get_frame_rect();
+        const work = window.get_work_area_current_monitor();
+        const x = parent.x + Math.round((parent.width - rect.width) / 2);
+        const y = parent.y + Math.round(parent.height * OVERLAY_TOP_FRACTION);
+
+        window.move_frame(false,
+            Math.max(work.x, Math.min(x, work.x + work.width - rect.width)),
+            Math.max(work.y, Math.min(y, work.y + work.height - rect.height)));
+
+        // And kept on top, which moving it over the window made necessary.
+        // Out at the side it was in front of nothing; over the conversation
+        // it goes behind it the moment the focus is handed back, which is
+        // something this extension does on purpose and within the second.
+        window.make_above();
+
+        if (this._config.log)
+            console.log(`${TAG} overlay -> ${x},${y} over ${JSON.stringify(over.get_title())}`);
+    }
+
+    _overlayParent() {
+        const last = this._lastFocused;
+        if (last && last.get_compositor_private() &&
+            last.get_wm_class() === 'kakaotalk.exe' &&
+            last.get_frame_rect().height >= MAIN_MIN_HEIGHT)
+            return last;
+        return this._findMainWindow();
     }
 
     _addIndicator() {
@@ -807,6 +879,15 @@ export default class KakaoTalkPopup {
         if (this._expectingMenu() && this._isPopupWindow(window) &&
             !this._menuPlaced) {
             this._placeMenu(window);
+            return;
+        }
+
+        // Not everything small and owned is part of a notification. The date
+        // that appears while a conversation is scrolled is a window of its
+        // own, and joining it to a notification group means it lands in the
+        // corner with one.
+        if (this._isOverlay(window)) {
+            this._placeOverlay(window);
             return;
         }
 

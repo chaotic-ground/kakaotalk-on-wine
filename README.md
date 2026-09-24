@@ -162,6 +162,13 @@ why tooltips stayed broken after menus were fixed.
 **A SystemLink keyed on a substituted font is discarded.** Wine says so:
 `SystemLink entry for substituted font, ignoring`.
 
+**A face Wine has is never substituted, and several of Wine's own faces have
+no Hangul.** That does not look like a row of boxes. Their `.notdef` is
+blank, so the text is drawn as the right amount of empty space: the date that
+appears while a conversation is scrolled read "9. 24." with a gap where the
+day of the week should be. So the font link carries NanumGothic as well as
+the emoji face, for every face an application is likely to ask for by name.
+
 **Endpoint antimalware eats Wine.** On a managed machine, Bitdefender
 quarantined 92 of a kron4ek build's PE modules seconds after they were
 written -- `gdi32.dll`, `svchost.exe`, `ping.exe` and friends, as

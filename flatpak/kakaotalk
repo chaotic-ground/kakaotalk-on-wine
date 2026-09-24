@@ -17,8 +17,11 @@
 #   kakaotalk              set up if needed, then run
 #   kakaotalk --reinstall  install the client again over the top
 #   kakaotalk --setup      set up and stop, without running
+#   kakaotalk --restart    stop the running client and take its place
 #   kakaotalk --quit       ask the running client to close
 #   kakaotalk --show       bring the hidden window back
+#   kakaotalk --menu       put up the app's own tray menu
+#   kakaotalk --menu-close dismiss it
 set -euo pipefail
 IFS=$'\n\t'
 
@@ -217,9 +220,9 @@ PY
 # create_family does that itself, with nothing in the registry to show for it
 # -- and a link keyed on a substituted name is thrown away with
 # "SystemLink entry for substituted font, ignoring".
-link_emoji_font() {
-  step "linking the emoji fallback"
-  local staged="$CACHE/emoji.reg"
+link_fallback_fonts() {
+  step "linking the fallback faces"
+  local staged="$CACHE/fontlink.reg"
   python3 - "$staged" <<'PY'
 import sys
 
@@ -227,16 +230,54 @@ def multi_sz(items):
     data = b"".join(s.encode("utf-16-le") + b"\x00\x00" for s in items) + b"\x00\x00"
     return ",".join("%02x" % b for b in data)
 
-link = multi_sz(["NotoEmoji-Regular.ttf,Noto Emoji"])
+# Hangul first, then emoji. A link is walked in order, for each character the
+# base face has no glyph of its own for.
+#
+# NanumGothic is in the link and not only in the substitutions because a face
+# wine actually has is never substituted, and several of wine's own faces
+# carry no Hangul at all. What that looks like is not a row of boxes: their
+# .notdef is blank, so the text comes out as the right amount of empty space.
+# The date that appears while a conversation is scrolled read "2  4", with
+# the 월 and the 일 missing and their widths kept.
+link = multi_sz(["NanumGothic.ttf,NanumGothic",
+                 "NotoEmoji-Regular.ttf,Noto Emoji"])
+
+# Every face an application is likely to ask for by name and wine is likely
+# to answer with something Latin-only.
+bases = ("나눔고딕", "맑은 고딕", "Malgun Gothic", "Gulim", "Dotum", "Batang",
+         "Arial", "Tahoma", "System", "Segoe UI", "Microsoft Sans Serif",
+         "MS Shell Dlg", "MS Shell Dlg 2", "MS Sans Serif", "Helvetica",
+         "Verdana", "Courier New", "Times New Roman")
+
 lines = ["Windows Registry Editor Version 5.00", "",
          r"[HKEY_LOCAL_MACHINE\Software\Microsoft\Windows NT\CurrentVersion\FontLink\SystemLink]"]
-for base in ("나눔고딕", "맑은 고딕", "Malgun Gothic", "Arial", "Tahoma", "System"):
+for base in bases:
     lines.append('"%s"=hex(7):%s' % (base, link))
 lines.append("")
 open(sys.argv[1], "w", encoding="utf-16-le").write("﻿" + "\n".join(lines))
 PY
   import_reg "$staged"
   rm -f "$staged"
+}
+
+# The font work is done once, in setup, and setup runs only when there is no
+# client -- so a prefix made before any of it changed would keep the old
+# arrangement for good. The marker says which arrangement it has, and the
+# steps run again when that is not this one.
+#
+# Bumped whenever install_fonts, substitute_korean_fonts,
+# rename_chrome_fonts or link_fallback_fonts changes.
+readonly FONTS_VERSION=2
+
+refresh_fonts() {
+  local marker="$PREFIX/.fonts-version"
+  [[ -f $EXE ]] || return 0
+  [[ $(cat "$marker" 2>/dev/null) == "$FONTS_VERSION" ]] && return 0
+  install_fonts
+  substitute_korean_fonts
+  rename_chrome_fonts
+  link_fallback_fonts
+  printf '%s\n' "$FONTS_VERSION" >"$marker"
 }
 
 set_driver_and_dpi() {
@@ -294,9 +335,10 @@ setup() {
   install_fonts
   substitute_korean_fonts
   rename_chrome_fonts
-  link_emoji_font
+  link_fallback_fonts
   set_driver_and_dpi
   install_client
+  printf '%s\n' "$FONTS_VERSION" >"$PREFIX/.fonts-version"
 }
 
 # The marker is the client, not a flag file: if the executable is there the
@@ -315,6 +357,7 @@ fi
 # wine builds it again as it starts, with no wineboot needed.
 wine reg delete 'HKLM\System\CurrentControlSet\Enum\DISPLAY' /f >/dev/null 2>&1 || true
 
+refresh_fonts
 install_icon
 
 # Everything that has to reach the client once it is running has to happen in
