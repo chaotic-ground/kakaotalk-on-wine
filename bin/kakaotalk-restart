@@ -183,7 +183,13 @@ stop() {
   fi
 
   for _ in {1..15}; do
-    running || return 0
+    if ! running; then
+      # It went when asked. The tray did not: explorer.exe is its own
+      # process and outlives the client either way, so the reaping belongs
+      # after every path out of here, not only after the killing one.
+      reap_tray
+      return 0
+    fi
     sleep 1
   done
 

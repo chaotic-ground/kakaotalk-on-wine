@@ -179,6 +179,18 @@ Bottles ships survives because it lives in the flatpak runtime's read-only
 right after extracting and says this instead of letting Wine say the other
 thing.
 
+**GNOME draws the generic placeholder because it has a window it cannot tie
+to an application.** Wine names a window after the process that owns it, so
+every KakaoTalk window calls itself `kakaotalk.exe`, and nothing connects
+that to anything installed. A desktop file with `StartupWMClass=kakaotalk.exe`
+is the tie. The picture is a second problem: winewayland can set a window
+icon over `xdg-toplevel-icon-v1` and mutter does not implement it -- it says
+so on every launch, "window icons will not be supported" -- so the icon has
+to come through the icon theme, which means a file on disk at build time.
+Kakao's artwork is not this repository's to ship, so the launcher takes it
+out of the client the user installed and writes it to `~/.local/share/icons`.
+That, and only that, is what `--filesystem=xdg-data/icons` is for.
+
 **A second `flatpak run` of a running app kills it.** Not a second client --
 that failure is known and guarded. This is any wine process at all in a
 second instance, as soon as it looks at another process: `wine tasklist` is
@@ -221,6 +233,8 @@ disable/enable instead of a logout.
   release assets, so it stands on its own rather than needing this checkout.
   `kakaoshow.c` is the one Windows program here: it asks a running KakaoTalk
   to show its window, which is what makes the tray dispensable.
+  `extract-icon.py` takes the app's icon out of the installed client, since
+  the picture is Kakao's and cannot ship here.
 - `bin/wayland-screenshot` — capture through the desktop portal, for when the
   app's windows are no longer XWayland and nothing else can see them.
 - `bin/kakaotalk-hang-report` — thread states, and backtraces resolved to

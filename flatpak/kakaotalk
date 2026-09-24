@@ -32,6 +32,7 @@ readonly SHARE=/app/share/kakaotalk
 readonly CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/kakaotalk"
 # Where the outside asks for something to happen in here. See serve_control.
 readonly CONTROL="${XDG_DATA_HOME:-$HOME/.local/share}/control"
+readonly APP_ID=io.github.chaotic_ground.KakaoTalk
 
 # The 64-bit client. Kakao publishes three Windows builds; this is the one
 # the download page labels 기존버전, and the one every search result hands you
@@ -239,6 +240,32 @@ install_client() {
   "$SERVER" -w
 }
 
+# The icon GNOME draws in alt-tab and the overview, taken out of the client
+# rather than shipped: the picture is Kakao's. See flatpak/extract-icon.py,
+# which also says why Wine cannot supply it.
+#
+# ~/.local/share/icons and not /app/share/icons, which would be the ordinary
+# place for it: that one is read-only long before there is a client to take
+# an icon from. Hence --filesystem=xdg-data/icons in the manifest, which
+# exists for this and nothing else.
+#
+# Failing is allowed. An icon is not worth refusing to start over, and
+# without one the app looks exactly as it did before.
+install_icon() {
+  [[ -f $EXE ]] || return 0
+  local dir=$HOME/.local/share/icons/hicolor/256x256/apps
+  # Once is enough, and this runs on every launch: whoever installed before
+  # this existed has a client and no icon, and setup() will never run for
+  # them again. Delete the file to have it made afresh.
+  [[ -f $dir/$APP_ID.png ]] && return 0
+  step "taking the icon out of the client"
+  mkdir -p "$dir" || return 0
+  python3 "$SHARE/extract-icon.py" "$EXE" "$dir/$APP_ID.png" || true
+  # Without this GTK keeps serving whatever the cache said, which for a
+  # name that was not there before is nothing at all.
+  gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
+}
+
 setup() {
   mkdir -p "$CACHE"
   ensure_prefix
@@ -266,6 +293,8 @@ fi
 # throws the app's own popups across the screen. Dropping it costs nothing:
 # wine builds it again as it starts, with no wineboot needed.
 wine reg delete 'HKLM\System\CurrentControlSet\Enum\DISPLAY' /f >/dev/null 2>&1 || true
+
+install_icon
 
 # Everything that has to reach the client once it is running has to happen in
 # here, inside the instance that started it. A second `flatpak run` cannot do

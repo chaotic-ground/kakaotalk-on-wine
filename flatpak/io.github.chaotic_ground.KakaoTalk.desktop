@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=카카오톡
+GenericName=Messenger
+Comment=KakaoTalk, in Korean, with the Wine it needs
+Exec=kakaotalk
+Icon=io.github.chaotic_ground.KakaoTalk
+Terminal=false
+Categories=Network;InstantMessaging;
+# Wine names a window after the process that owns it, so this is what every
+# KakaoTalk window calls itself. Without it GNOME has a window it cannot tie
+# to an application, and draws the generic placeholder in alt-tab and the
+# overview.
+StartupWMClass=kakaotalk.exe
