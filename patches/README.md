@@ -75,6 +75,24 @@ warn:keyboard:WAYLAND_KbdLayerDescriptor Failed to find Xkb layout for HKL 0x412
 
 `0412` is Korean, twice, and no layout has that in its high word.
 
+## 0005 — a window owned by a hidden one is shown
+
+The tray menu never appeared. Not misplaced, not behind something: nowhere.
+An app that hides to the tray owns that menu from a window that is not on
+screen, and `wayland_win_data_create_wayland_surface` gives any window with
+an owner a **subsurface** of the owner's surface. An owner that is not on
+screen has a surface with no role -- the driver keeps one but never maps it,
+deliberately, so as not to fill the compositor with empty xdg_toplevels --
+and a subsurface of an unmapped surface is drawn nowhere at all.
+
+So take the subsurface only when the owner is actually on screen. Otherwise
+give the window its own surface, which is already what a window with no owner
+gets.
+
+The evidence, from a program that asked Win32 rather than looking at the
+screen: the menu window exists, is `visible=1`, is 124x141 at a sensible
+place, and its owner is an `EVA_Window_Dblclk` that is 0x0 and `visible=0`.
+
 ## Building it
 
 In a container, so the host keeps no build dependencies. About forty minutes

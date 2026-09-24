@@ -1,0 +1,41 @@
+From: kakaotalk-on-wine
+Subject: [PATCH] winewayland: Show a window owned by a hidden one
+
+An app that hides to the tray and then puts up its tray menu owns that
+menu from a window that is not on screen. The menu never appeared: not
+misplaced, not behind anything, simply nowhere.
+
+A window with an owner is given a subsurface of the owner's surface. An
+owner that is not on screen has a surface with no role -- the driver
+keeps one around but never maps it, deliberately, to avoid filling the
+compositor with empty xdg_toplevels -- and a subsurface of an unmapped
+surface is drawn nowhere at all.
+
+So only take the subsurface when the owner is actually on screen, and
+otherwise give the window a surface of its own, which is already what
+happens for a window with no owner.
+---
+ dlls/winewayland.drv/window.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
+--- a/dlls/winewayland.drv/window.c
++++ b/dlls/winewayland.drv/window.c
+@@ -186,7 +186,13 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
+                (!(exstyle & WS_EX_LAYERED) || data->layered_attribs_set);
+ 
+     if (!visible) role = WAYLAND_SURFACE_ROLE_NONE;
+-    else if (owner_surface) role = WAYLAND_SURFACE_ROLE_SUBSURFACE;
++    /* An owner that is not on screen itself has a surface with no role, and a
++     * subsurface of that is drawn nowhere. A window owned by a hidden one is
++     * an ordinary thing -- an app that hides to the tray and then puts up its
++     * tray menu owns it from a hidden window, and the menu simply never
++     * appeared -- so give it a surface of its own instead. */
++    else if (owner_surface && owner_surface->role != WAYLAND_SURFACE_ROLE_NONE)
++        role = WAYLAND_SURFACE_ROLE_SUBSURFACE;
+     else role = WAYLAND_SURFACE_ROLE_TOPLEVEL;
+ 
+     /* we can temporarily clear the role of a surface but cannot assign a different one after it's set */
+-- 
+2.55.0
+
