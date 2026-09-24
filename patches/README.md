@@ -138,6 +138,18 @@ mutter는 포커스가 없는 클라이언트의 요청도 받아들였습니다
 일어나지 않고, `pActivateWindow`까지 오지 않습니다. 알림을 누르는 경우는
 팝업에서 대화창으로 가는 진짜 변경이라 닿습니다.
 
+**토큰은 왕복 하나만큼 늦게 옵니다.** 그 사이에 포그라운드가 바뀌어
+있을 수 있고, 낡은 토큰으로 표면을 올리면 컴포지터의 포커스를 이미
+지나간 창으로 끌고 갑니다. 트레이 메뉴가 그렇게 죽었습니다. 메뉴는
+`track_menu`가 `set_capture_window`로 캡처를 잡고 도는데, 포커스가
+옮겨가면 그 캡처가 풀리고 루프가 끝납니다. 토큰이 루프보다 먼저 오면
+멀쩡하고 늦게 오면 죽어서, 여섯 번에 한 번씩 안 떴습니다.
+
+그래서 요청을 하나만 살려두고, 토큰이 왔을 때 그 창이 아직 포그라운드가
+아니면 버립니다. X11 드라이버에는 이 창이 없습니다. 왕복 없이
+`_NET_ACTIVE_WINDOW`를 그 자리에서 보냅니다. 다만 거기도 이미 요청한
+창에는 다시 요청하지 않습니다.
+
 프로토콜 xml은 wayland-protocols에서 가져와 패치에 들어 있습니다.
 
 ## 빌드
@@ -211,6 +223,30 @@ sha256sum "$(find ~/.local/share/flatpak/app/io.github.chaotic_ground.KakaoTalk 
 **여기서 빌드한 Wine은 `$HOME` 아래 있고, 백신이 닿는 자리입니다.**
 flatpak 안으로 들어가면 읽기 전용이라 안전합니다. 만든 직후 92개 파일이
 사라지면 그 일이 일어난 것입니다.
+
+## 화면을 안 뺏고 시험하기
+
+포커스와 창 올리기를 건드리는 변경은 시험할 때마다 쓰던 화면을
+가로챕니다. mutter를 화면 없이 띄우고 그 안에서 돌리면 됩니다.
+
+```sh
+DBUS_SESSION_BUS_ADDRESS=$(dbus-daemon --session --fork --print-address)
+export DBUS_SESSION_BUS_ADDRESS
+mutter --headless --virtual-monitor 1280x800 --wayland-display=wayland-test &
+WAYLAND_DISPLAY=wayland-test WINEPREFIX=/tmp/tp wine <program>
+```
+
+그대로 두면 `wl_seat.capabilities(0)`입니다. 입력 장치가 없어서 키보드
+포커스 이벤트가 아예 안 오고, 포커스가 걸린 문제는 재현되지 않습니다.
+mutter는 RemoteDesktop 세션에 실제로 키가 들어와야 가상 장치를 만듭니다.
+세션은 만든 D-Bus 연결과 함께 살기 때문에 `gdbus call` 한 줄로는 안 되고,
+연결을 붙들고 있는 프로그램이 필요합니다.
+
+1. `org.gnome.Mutter.RemoteDesktop.CreateSession`
+2. 그 세션에 `Start`
+3. `NotifyKeyboardKeycode(42, true)` 와 `(42, false)`
+
+그러면 `capabilities(2)`가 되고 `wl_keyboard.enter`가 옵니다.
 
 ## 테스트
 
