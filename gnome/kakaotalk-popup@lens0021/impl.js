@@ -107,9 +107,6 @@ const DEFAULT_CONFIG = {
     // 팝업의 장식을 숨긴다. 그림자와, 알림이 남기는 띠. 둘 다 메시지를
     // 담고 있지 않다. _hideChrome을 보라.
     hide_popup_chrome: true,
-    // 창이 앞으로 나오겠다고 하면 내보내 준다. _onDemandsAttention을
-    // 보라.
-    raise_on_demand: true,
     // 앱이 자기 창 위에 그리는 것을 그 위로 돌려놓는다. 대화를 스크롤할 때
     // 뜨는 날짜 같은 것. _placeOverlay를 보라.
     place_overlays: true,
@@ -373,32 +370,22 @@ export default class KakaoTalkPopup {
     }
 
 
-    // 알림을 눌렀을 때 대화창이 앞으로 나오는 것. 앱은 이미 요청하고
-    // 있다. Wine 패치 0007이 그 요청을 xdg-activation 토큰으로 내보내고,
-    // mutter는 토큰에 붙은 입력 시리얼을 보고 허락하거나 거절한다.
-    // 거절할 때 아무 일도 없는 것이 아니라 창에 표시를 남기는데, 그것이
-    // 이 신호다. 여기서 대신 올려준다.
+    // 여기서 창을 올리지 않는다. 찍기만 한다.
     //
-    // 셸에는 포커스 훔치기 방지가 없다. 확장이 activate()를 부르면
-    // 그대로 된다. mutter가 앱에게 안 주는 것을 확장이 주는 셈이고,
-    // 그래서 이것이 설정에 있다.
+    // 알림이 올 때마다 앱은 목록 창을 앞으로 내달라고 한다. mutter는
+    // 거절하고 창에 "주의를 요함" 표시를 남기며, 그것이 이 신호다.
+    // 윈도우도 같다. 배경 프로세스의 SetForegroundWindow를 OS가 거절하고
+    // 대신 작업 표시줄 단추를 깜빡인다. 그러니 사슬 전체가 이미 윈도우와
+    // 같은 모양이고, 여기서 activate()를 부르면 그걸 깨뜨린다.
     //
-    // 알림 조각은 빼야 한다. 그쪽은 포커스를 안 가져가게 하는 데 일부러
-    // 공을 들인 창이고, 여기서 올리면 그걸 도로 물린다.
+    // 한동안 불렀었다. 알림이 올 때마다 목록이 튀어나왔다.
+    //
+    // 알림을 눌렀을 때 대화창이 나오는 것은 다른 길로 간다. 그 클릭에는
+    // 입력 시리얼이 붙고, Wine 패치 0007이 그것을 활성화 토큰에 실어
+    // 보내면 mutter가 허락한다. 확장이 할 일이 없다.
     _onDemandsAttention(window) {
-        // 거르기 전에 찍는다. 이 신호가 오는지 자체가 질문이었고, 거른
-        // 뒤에 찍으면 안 온 것과 걸러진 것을 구별할 수 없다.
         if (this._config.log)
             console.log(`${TAG} attention: ${this._describe(window)}`);
-        if (!this._config.raise_on_demand)
-            return;
-        if (window.get_wm_class() !== 'kakaotalk.exe')
-            return;
-        if (this._isPopupWindow(window) || this._isOverlay(window))
-            return;
-        window.activate(global.get_current_time());
-        if (this._config.log)
-            console.log(`${TAG} raised it`);
     }
 
     // 새 메시지가 오면 팝업이 키보드를 같이 가져간다. 다른 데서 타자를
