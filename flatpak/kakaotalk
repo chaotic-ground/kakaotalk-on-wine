@@ -417,9 +417,18 @@ serve_control() {
 #
 # timeout을 두는 이유는 박힌 wineserver가 이 스크립트까지 붙잡으면 고치려던
 # 것을 그대로 다시 만들기 때문이다.
+# 그리고 -k 전에 묻는다. 프리픽스는 인스턴스끼리 공유하고 wineserver도
+# 하나다. -k는 세션 전체를 끝내므로, 다른 인스턴스가 클라이언트를 들고
+# 있으면 그것까지 죽는다. 재시작이 특히 위험하다. 끄는 쪽의 정리가 켜는
+# 쪽보다 늦게 돌면 방금 띄운 창이 그대로 사라진다. 두 쪽이 순서대로 도는
+# 것처럼 보이지만, 바깥의 호출자가 기다리는 것은 클라이언트가 사라지는
+# 것이지 런처가 끝나는 것이 아니다.
 cleanup() {
   kill "$CONTROL_PID" 2>/dev/null || true
   rm -f "$CONTROL"
+  if timeout 20 "$WINE" tasklist 2>/dev/null | grep -qi 'KakaoTalk.exe'; then
+    return
+  fi
   timeout 20 "$SERVER" -k >/dev/null 2>&1 || true
 }
 
