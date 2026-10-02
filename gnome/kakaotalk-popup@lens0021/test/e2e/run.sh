@@ -67,7 +67,11 @@ cp -r "$HERE/../.." "$XDG_DATA_HOME/gnome-shell/extensions/$EXT"
 # 로그를 켠다. 이 시험이 보는 것이 그 로그다.
 printf '{"log": true}\n' > "$XDG_CONFIG_HOME/kakaotalk-popup.json"
 
-gnome-shell --headless --virtual-monitor 1280x800 \
+# --no-x11이 없으면 컨테이너에서 셸이 즉시 죽는다. Xwayland가
+# /tmp/.X11-unix에 소켓을 만들려 하는데 그 디렉터리가 쓸 수 없고,
+# mutter는 그것을 치명적으로 본다. 이 시험에 X11은 필요 없다. 보는 것은
+# Wayland 창 하나다.
+gnome-shell --headless --no-x11 --virtual-monitor 1280x800 \
   --wayland-display="$DISPLAY_NAME" > "$WORK/shell.log" 2>&1 &
 SHELL_PID=$!
 
