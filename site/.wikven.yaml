@@ -12,6 +12,8 @@ extensions:
   - SyntaxHighlight_GeSHi
   # 첫 화면의 "고친 것" 표가 쓴다.
   - DynamicPageList4
+  # 패치 문서 옆에 붙는 상자가 쓴다.
+  - PortableInfobox
 
 skins:
   - MonoBook
@@ -35,9 +37,13 @@ config:
   WikvenEditUrl: https://github.com/chaotic-ground/kakaotalk-on-wine/edit/main/site/$1
   WikvenHistoryUrl: https://github.com/chaotic-ground/kakaotalk-on-wine/commits/main/site/$1
 
-  # DPL4는 묶음에 없어서 빌드할 때 받아온다. REL1_46 가지가 아직 없으므로
+  # 둘 다 묶음에 없어서 빌드할 때 받아온다. 어느 쪽도 1.46 가지가 없으므로
   # main을 커밋으로 고정한다. MediaWiki를 올릴 때 여기가 먼저 깨진다.
+  # reference는 git clone --branch로 가므로 SHA는 commit에 적는다.
   WikvenRepositories:
     DynamicPageList4:
       repository: https://github.com/Universal-Omega/DynamicPageList4.git
       commit: d2e8e6caa1bc2468c83cf5087d2bbfd660484883
+    PortableInfobox:
+      repository: https://github.com/Universal-Omega/PortableInfobox.git
+      commit: 60c09a75d023eac1da3a63945d0a4a9678fc86db

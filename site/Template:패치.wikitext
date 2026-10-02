@@ -1,22 +1,29 @@
-<includeonly>{| class="wikitable" style="float:right; clear:right; margin:0 0 1em 1em; font-size:90%; max-width:24em"
-! colspan="2" style="text-align:center" | 패치 {{{번호}}}
-|-
-! style="text-align:left" | 증상
-| {{{증상}}}
-|-
-! style="text-align:left" | 건드리는 곳
-| {{{파일}}}
-|-
-! style="text-align:left" | 업스트림
-| {{{업스트림}}}
-|-
-! style="text-align:left" | 파일
-| [https://github.com/chaotic-ground/kakaotalk-on-wine/blob/main/patches/{{{패치}}} {{{패치}}}]
-|}
-[[Category:패치]]</includeonly><noinclude>
+<includeonly><infobox>
+	<title source="번호">
+		<format>패치 {{{번호}}}</format>
+	</title>
+	<data source="증상">
+		<label>증상</label>
+	</data>
+	<data source="파일">
+		<label>건드리는 곳</label>
+	</data>
+	<data source="업스트림">
+		<label>업스트림</label>
+	</data>
+	<data source="패치">
+		<label>파일</label>
+		<format>[https://github.com/chaotic-ground/kakaotalk-on-wine/blob/main/patches/{{{패치}}} {{{패치}}}]</format>
+	</data>
+</infobox>[[Category:패치]]</includeonly><noinclude>
 패치 문서의 맨 위에 둡니다. 옆에 붙는 상자가 되고, 같은 값이
 [[index|첫 화면]]의 "고친 것" 표가 됩니다. 표는 손으로 쓰지 않습니다.
 DPL이 이 분류의 문서를 모아 여기 적은 인자를 꺼내 만듭니다.
+
+상자는 PortableInfobox이고 표는 DPL인데, 둘은 서로를 모릅니다. DPL은
+문서의 위키텍스트에서 인자를 직접 꺼내므로 상자를 어떻게 그리든
+상관하지 않습니다. 그래서 <code>&lt;infobox&gt;</code> 안을 고쳐도 표는
+그대로입니다.
 
 {| class="wikitable"
 ! 인자 !! 무엇
