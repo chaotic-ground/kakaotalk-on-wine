@@ -72,3 +72,25 @@ jobs:
 
       - name: actionlint
         uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7  # v2.2.0
+
+      # 이 저장소에만 해당하는 불변식. 일반 린터가 모르는 것들이고, 셋 다
+      # 지키지 못해서 버그가 났습니다. .opengrep/rules.yml을 보세요.
+      #
+      # 주석은 AST에 없으므로 pattern-regex로 원문을 봅니다. 긴 주석 블록을
+      # 잡는 규칙이 그 길로 돕니다.
+      - name: Fetch opengrep
+        run: |
+          curl -fsSL -o /usr/local/bin/opengrep \
+            https://github.com/opengrep/opengrep/releases/download/v1.30.0/opengrep_manylinux_x86
+          chmod +x /usr/local/bin/opengrep
+          opengrep --version
+
+      # 불변식을 어기면 떨어뜨립니다. 어긴다는 것은 고쳐둔 버그를 도로
+      # 들이는 것입니다.
+      - name: Invariants
+        run: opengrep scan --config .opengrep/rules.yml --severity WARNING --error --quiet .
+
+      # 긴 주석 블록은 알려만 줍니다. 주석이 아니라 문서일 수 있다는
+      # 신호지 틀렸다는 뜻이 아닙니다.
+      - name: Comment blocks
+        run: opengrep scan --config .opengrep/rules.yml --severity INFO --quiet . || true
