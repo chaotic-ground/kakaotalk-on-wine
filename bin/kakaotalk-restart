@@ -134,6 +134,35 @@ reap_tray() {
   done
 }
 
+# 클라이언트가 갔다고 끝난 것이 아니다. 런처는 아직 샌드박스 안에서
+# 정리 중이고, 그 정리가 wineserver -k를 부른다. 프리픽스와 wineserver는
+# 인스턴스끼리 공유하므로 그 -k는 세션 전체를 끝낸다.
+#
+# 런처는 자기가 죽이기 전에 클라이언트가 남아 있는지 tasklist로 묻지만,
+# 그 물음과 새 클라이언트가 생기는 시점이 엇갈릴 수 있다. 끄자마자 켜면
+# 새 클라이언트는 아직 뜨는 중이고 tasklist에는 안 보인다. 그러면 -k가
+# 돌고 막 뜨던 것이 같이 간다. 추적을 걸어둔 실행이 20초 만에 그렇게
+# 사라진 적이 있다.
+#
+# 그래서 인스턴스가 사라지는 것까지 기다린다. 인스턴스가 없다는 것은
+# 런처도 wineserver도 explorer도 없다는 뜻이고, 그때는 죽일 것이 남아
+# 있지 않다.
+instances_gone() {
+  ! flatpak ps --columns=application 2>/dev/null | grep -qx "$APP_ID"
+}
+
+wait_for_instances() {
+  for _ in {1..30}; do
+    instances_gone && return 0
+    sleep 1
+  done
+  # 안 사라졌다. 여기서 멈추는 것보다 알리고 나아가는 편이 낫다. 호출자가
+  # 하려던 일은 앱을 띄우는 것이고, 못 띄우는 것보다 경합을 무릅쓰는 쪽이
+  # 사용자에게 낫다.
+  echo "${0##*/}: 인스턴스가 아직 남아 있습니다. 그대로 진행합니다." >&2
+  return 0
+}
+
 launch() {
   exec flatpak run "$APP_ID"
 }
@@ -145,6 +174,7 @@ stop() {
   : >"$QUITTING"
   stop_now
   rc=$?
+  wait_for_instances
   rm -f "$QUITTING"
   return $rc
 }

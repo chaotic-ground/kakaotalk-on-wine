@@ -20,6 +20,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 // 창 분류는 셸을 모르는 쪽에 있다. 시험에서 부를 수 있도록.
 import { classify, POPUP_TITLE } from './classify.js';
+import { decideTrayClick } from './decide.js';
 // extension.js가 읽어온다. 로그아웃 없이 고칠 수 있도록 enable()마다 이
 // 파일을 다시 import한다. Extension의 하위 클래스가 아니라 그냥 클래스인
 // 이유는, 셸이 보는 것은 언제나 로더뿐이기 때문이다.
@@ -215,6 +216,7 @@ export default class KakaoTalkPopup {
         this._hidden = new Set();
         // 확장이 일부러 한 일과 그 유효 시간. _intend를 보라.
         this._intent = {};
+        this._expectId = 0;
         this._menuAt = null;
         this._menuPlaced = false;
         this._syncId = 0;
@@ -277,6 +279,10 @@ export default class KakaoTalkPopup {
         if (this._syncId) {
             GLib.source_remove(this._syncId);
             this._syncId = 0;
+        }
+        if (this._expectId) {
+            GLib.source_remove(this._expectId);
+            this._expectId = 0;
         }
         this._indicator?.destroy();
         this._indicator = null;
@@ -568,57 +574,73 @@ export default class KakaoTalkPopup {
     }
 
     pokeTray() {
-        // 트레이를 거치는 것은 거기 없는 창을 위한 우회로다. 창이 있으면
-        // 올리고 끝낸다. 포인터를 옮길 것도, 두 번째 클릭도 없다.
-        const main = this._findMainWindow();
-        if (main) {
-            // 기록한다. 이 갈래가 조용한 쪽이었고 그래서 숨어 있었다.
-            // 인디케이터는 눈에 보이는 일을 아무것도 안 했고, 무엇을
-            // 결정했는지 말해주는 줄도 없었다.
-            if (this._config.log)
-                console.log(`${TAG} raising ${this._describe(main)}`);
-            // 우리가 올리는 것이라고 표시해둔다. 아래의 되돌리기가 이것까지
+        const choice = decideTrayClick({
+            windows: global.display.list_all_windows(),
+            pids: this._pids,
+            installed: this.appInstalled(),
+        });
+        // 무엇을 하기로 했는지 항상 찍는다. 이 갈래가 조용한 쪽이었고,
+        // 인디케이터가 아무 일도 안 한 것처럼 보일 때 왜 그랬는지 말해주지
+        // 못한 것이 같은 조사를 네 번 하게 만들었다.
+        console.log(`${TAG} indicator: ${choice.do}` +
+                    (choice.window ? ` ${this._describe(choice.window)}` : ''));
+
+        switch (choice.do) {
+        case 'raise':
+            // 우리가 올리는 것이라고 표시해둔다. 되돌리기가 이것까지
             // 되돌리면 인디케이터가 아무 일도 안 하는 것이 된다. 실제로
             // 그랬다.
             this._intend('raise', RAISE_GRACE_US);
-            main.activate(global.get_current_time());
+            choice.window.activate(global.get_current_time());
             return;
-        }
 
-        // 앱에 그냥 물어볼 수 있으면 트레이는 필요 없다. kakaoshow는 트레이
-        // 클릭이 앱으로 하여금 자기에게 보내게 만드는 그 메시지를 대신
-        // 보낸다. 떠 있는 트레이 창도, 화면을 가로지르는 포인터도, 손이
-        // 하는 두 번째 클릭도 없이 창이 돌아온다. flatpak/kakaoshow.c를
-        // 보라.
-        //
-        // 앱이 설치되어 있는지로 막는 이유는 kakaoshow가 앱과 함께 오기
-        // 때문이다. 아무것도 없으면 물어볼 곳이 없고, 아래의 대비책만
-        // 남는다.
-        if (this.appInstalled()) {
-            if (this._config.log)
-                console.log(`${TAG} asking the app to show itself`);
+        case 'ask':
             this._askApp('show');
+            // 물었다고 오는 것은 아니다. 앱이 답하지 않으면 사용자에게는
+            // 인디케이터가 고장난 것으로 보이고, 지금까지 그게 네 번 중
+            // 세 번이었다. 창이 오는지 보고, 안 오면 말한다.
+            this._expectWindow();
             return;
-        }
 
-        const tray = this._findTrayWindow();
-        if (!tray) {
-            // 설치된 것이 없으니 시작할 것도 없다. 여기서 좌클릭이 할 수
-            // 있는 쓸모 있는 일은 설치를 권하는 것뿐이다.
-            if (!this.appInstalled()) {
-                this.install();
-                return;
-            }
-            // 트레이가 없다는 것은 앱이 안 돌고 있다는 뜻이다. 카카오톡이
-            // 내내 띄워두는 유일한 창이 그것이다. 아무것도 안 하고 있는
-            // 인디케이터는 자기가 대신하는 것을 시작해주는 인디케이터보다
-            // 나쁘고, 혹시 뭔가 돌고 있었다면 --start는 아무 일도 안
-            // 한다.
-            console.log(`${TAG} no tray window, starting KakaoTalk`);
+        case 'install':
+            this.install();
+            return;
+
+        case 'start':
             this._runHelper('--start');
             return;
-        }
 
+        case 'poke':
+            this._pokeTrayWindow(choice.window);
+            return;
+        }
+    }
+
+    // 앱에게 창을 보여달라고 한 뒤, 정말 오는지 본다.
+    //
+    // 2초는 재서 고른 것이 아니라 넉넉하게 잡은 것이다. 컨트롤 파일을
+    // 0.5초마다 보고, 그 다음 kakaoshow가 메시지를 보내고, 앱이 창을
+    // 띄운다. 늦어서 거짓 경보가 나면 늘려라.
+    _expectWindow() {
+        if (this._expectId)
+            GLib.source_remove(this._expectId);
+        this._expectId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, () => {
+            this._expectId = 0;
+            const back = decideTrayClick({
+                windows: global.display.list_all_windows(),
+                pids: this._pids,
+                installed: this.appInstalled(),
+            });
+            if (back.do === 'raise')
+                return GLib.SOURCE_REMOVE;
+            console.log(`${TAG} asked the app to show itself and no window came`);
+            Main.notify('카카오톡', '창을 불러오지 못했습니다. ' +
+                        '앱이 응답하지 않습니다.');
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _pokeTrayWindow(tray) {
         if (!this._virtual) {
             const seat = Clutter.get_default_backend().get_default_seat();
             this._virtual = seat.create_virtual_device(
@@ -634,14 +656,10 @@ export default class KakaoTalkPopup {
 
         // 클릭은 포인터가 있는 자리에서 맨 위에 있는 것에게 간다. 그래서
         // 포인터가 도착하기 전에 창이 앞에 있어야 한다. activate가 아니라
-        // raise다. 포인터 아래에 놓아주는 것은 raise이고, activate는 거기에
-        // 포커스까지 주는데 그 대가가 두 겹이다.
-        //
-        // 하나는 타자를 치고 있던 곳에서 포커스를 뺏는 것인데, 이 확장이
-        // 다른 데서 가장 많은 노력을 들여 막는 일이다. 다른 하나는 mutter가
-        // 창에 포커스를 줄 때 살아있는지 보려고 핑을 보낸다는 것이다.
-        // Wine의 트레이 창은 답하지 않으므로, 멀쩡히 동작하는 창 위에
-        // "“explorer.exe”이(가) 응답하지 않습니다" 대화상자가 뜬다.
+        // raise다. activate는 포커스까지 주는데 그 대가가 두 겹이다. 타자를
+        // 치던 곳에서 포커스를 뺏고, mutter가 포커스를 줄 때 보내는 핑에
+        // Wine의 트레이 창이 답하지 않아서 "응답하지 않습니다" 대화상자가
+        // 뜬다.
         tray.raise();
         if (this._config.log) {
             console.log(`${TAG} tray at ${rect.x},${rect.y} ${rect.width}x` +
@@ -655,10 +673,6 @@ export default class KakaoTalkPopup {
         // Wine이 받지 않는다. 네 가지로 해봤고 두 번은 성공처럼 보였는데,
         // 둘 다 포인터가 세워둔 아이콘 위에 사용자의 진짜 클릭이 떨어진
         // 것이었다. 무엇을 해봤는지는 커밋에 있다.
-        //
-        // 그래도 남겨둔다. 아무 일도 안 하는 동안은 비용이 없고, Wine이
-        // 받는 날이 오면 인디케이터가 한 번 클릭이 된다. 빼려면
-        // tray_virtual_click을 false로.
         //
         // 포인터가 아이콘 위에 남는 것은 동작한다. 트레이 창은 alt-tab에
         // 없어서, 안 그러면 거기 가는 데 오버뷰를 거쳐야 한다.
