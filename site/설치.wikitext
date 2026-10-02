@@ -38,8 +38,7 @@ gnome-extensions enable kakaotalk-popup@lens0021
 flatpak 설치를 권합니다.
 
 설정은
-[https://github.com/chaotic-ground/kakaotalk-on-wine/blob/main/gnome/README.md
-gnome/README.md]에 있습니다.
+[https://github.com/chaotic-ground/kakaotalk-on-wine/blob/main/gnome/README.md gnome/README.md]에 있습니다.
 
 == 안 될 때 ==
 '''증상이 없는 파일이 아니라 엉뚱한 Wine 오류로 나타납니다.'''

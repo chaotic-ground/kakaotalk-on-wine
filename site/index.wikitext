@@ -44,8 +44,7 @@ flatpak 하나와, Wayland가 부족한 부분을 메우는 GNOME 확장 하나�
 아예 없습니다. 글자는 나오고 색만 없습니다.
 
 '''카카오톡 자체는 들어있지 않습니다.''' 카카오의 것이라 배포할 수
-없습니다. 런처가 첫 실행 때 [https://www.kakaocorp.com/page/service/service/KakaoTalk
-공식 설치 파일]을 받아옵니다.
+없습니다. 런처가 첫 실행 때 [https://www.kakaocorp.com/page/service/service/KakaoTalk 공식 설치 파일]을 받아옵니다.
 
 == 시작하기 ==
 [[설치]]를 보세요.
@@ -54,6 +53,5 @@ flatpak 하나와, Wayland가 부족한 부분을 메우는 GNOME 확장 하나�
 Fedora 43, GNOME 49 Wayland, 패치한 Wine 11.18, 카카오톡 26.8(64비트).
 
 고친 것들이 왜 고쳐야 했는지는 저장소의
-[https://github.com/chaotic-ground/kakaotalk-on-wine/blob/main/patches/README.md
-patches/README.md]에 하나씩 적혀 있습니다. 대부분 업스트림 Wine의
+[https://github.com/chaotic-ground/kakaotalk-on-wine/blob/main/patches/README.md patches/README.md]에 하나씩 적혀 있습니다. 대부분 업스트림 Wine의
 버그이고, 몇 개는 아직 업스트림에 열려 있는 채입니다.
