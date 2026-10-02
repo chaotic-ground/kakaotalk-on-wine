@@ -14,6 +14,11 @@ extensions:
   - DynamicPageList4
   # 패치 문서 옆에 붙는 상자가 쓴다.
   - PortableInfobox
+  # 정적 사이트가 달리 만들 수 없는 head 태그를 쓴다. 사이트 소유 증명과
+  # 검색 결과에 뜨는 설명이다.
+  - WikiSEO
+  # WikiSEO가 각 문서의 첫 문단을 여기서 받아 설명으로 쓴다.
+  - TextExtracts
 
 skins:
   - MonoBook
@@ -27,6 +32,20 @@ config:
   # wikven은 무엇을 적든 Vector도 같이 짓는다. 그래서 모든 페이지에
   # 스킨 전환기가 있고, 구식이 싫은 사람은 거기서 바꾸면 된다.
   DefaultSkin: monobook
+
+  # 사이트맵과 og:url처럼 사이트 밖에서 문서를 가리켜야 하는 것이 여기서
+  # 나온다. 굽는 것 자체는 상대 경로라서 이 값과 무관하게 어디서나 돈다.
+  WikvenSiteUrl: https://chaotic-ground.github.io/kakaotalk-on-wine/
+
+  # 검색 결과에서 제목 밑에 뜨는 문장. 없으면 크롤러가 아무 데서나
+  # 주워오고, 이런 문서에서는 대개 길잡이 조각이 걸린다. WikiSEO가
+  # TextExtracts에 첫 문단을 물어 넣어주므로 문서마다 적지 않아도 된다.
+  #
+  # WikiSeoTryCleanAutoDescription은 일부러 안 켠다. 잘린 문장을 마지막
+  # 마침표까지 되돌리라는 것인데, 이미 마침표로 끝나지 않을 때만 돌고
+  # TextExtracts는 잘린 발췌를 "..."로 끝내서 영영 안 돈다. 대신 빈 발췌를
+  # "."이라는 설명으로 만든다. 태그가 없느니만 못하다.
+  WikiSeoEnableAutoDescription: true
 
   # 패치 쪽의 제목은 "패치/0007"이고 읽고 싶은 것은 무엇을 고쳤는지다.
   # DISPLAYTITLE이 진짜 제목과 다른 것을 쓰려면 이게 꺼져 있어야 한다.
@@ -47,3 +66,9 @@ config:
     PortableInfobox:
       repository: https://github.com/Universal-Omega/PortableInfobox.git
       commit: 60c09a75d023eac1da3a63945d0a4a9678fc86db
+    # REL1_46의 머리에 건다. v2.7.0 태그가 아닌 이유는 그 태그의 매니페스트가
+    # 2.6.6에 MediaWiki 1.39 이상이라고 적혀 있어서다. 가지 쪽이 2.7.0에
+    # 1.42 이상이다. 태그 이름이 담고 있지 않은 코드를 약속한다.
+    WikiSEO:
+      repository: https://github.com/wikimedia/mediawiki-extensions-WikiSEO.git
+      commit: 358a3d4775c36d6a0044330416bb6be9b6463a12
