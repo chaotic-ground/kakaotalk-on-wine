@@ -8,7 +8,7 @@ RLPAGEMODULES=[];</script>
 <script>(RLQ=window.RLQ||[]).push(function(){mw.loader.impl(function(){return["user.options@12s5i",function($,jQuery,require,module){mw.user.tokens.set({"patrolToken":"+\\","watchToken":"+\\","csrfToken":"+\\"});
 }];});});</script>
 
-<script src="./assets/startup-static.js"></script><script src="./assets/modules-static.js"></script><script>mw.loader.load(["site","mediawiki.page.ready","skins.monobook.scripts","ext.Wikven.pinnableState","ext.Wikven.appearance"]);</script>
+<script src="./assets/startup-static.js"></script><script src="./assets/modules-static.js"></script><script>mw.loader.load(["site","mediawiki.page.ready","mediawiki.toc","skins.monobook.scripts","ext.Wikven.pinnableState","ext.Wikven.appearance"]);</script>
 <meta name="generator" content="MediaWiki 1.46.0">
 <meta name="robots" content="max-image-preview:standard">
 <meta name="format-detection" content="telephone=no">
@@ -31,62 +31,94 @@ RLPAGEMODULES=[];</script>
 				<div id="contentSub" ><div id="mw-content-subtitle"></div></div>
 				
 				<div id="jump-to-nav"></div><a href="#column-one" class="mw-jump-link">Jump to navigation</a><a href="#searchInput" class="mw-jump-link">Jump to search</a>
-				<div id="mw-content-text" class="mw-body-content"><div class="mw-content-ltr mw-parser-output" lang="en" dir="ltr"><p>리눅스에서 <b>카카오톡</b>을 돌립니다. Wine 위에서, flatpak 하나로요.
+				<div id="mw-content-text" class="mw-body-content"><div class="mw-content-ltr mw-parser-output" lang="en" dir="ltr"><p>GNOME Wayland에서 한국어 <b>카카오톡</b>을 돌립니다. 패치한 Wine을 담은
+flatpak 하나와, Wayland가 부족한 부분을 메우는 GNOME 확장 하나입니다.
 </p><p>카카오는 리눅스 클라이언트를 내지 않습니다. 윈도우용을 Wine으로 돌리는
 것이 유일한 길인데, 그냥 돌리면 여러 가지가 어긋납니다. 이 꾸러미는 그
 어긋난 것들을 하나씩 고쳐둔 것입니다.
 </p>
+<div id="toc" class="toc" role="navigation" aria-labelledby="mw-toc-heading"><input type="checkbox" role="button" id="toctogglecheckbox" class="toctogglecheckbox" style="display:none" /><div class="toctitle" lang="en" dir="ltr"><h2 id="mw-toc-heading">Contents</h2><span class="toctogglespan"><label class="toctogglelabel" for="toctogglecheckbox"></label></span></div>
+<ul>
+<li class="toclevel-1 tocsection-1"><a href="#되는_것"><span class="tocnumber">1</span> <span class="toctext">되는 것</span></a></li>
+<li class="toclevel-1 tocsection-2"><a href="#알아둘_것"><span class="tocnumber">2</span> <span class="toctext">알아둘 것</span></a></li>
+<li class="toclevel-1 tocsection-3"><a href="#시작하기"><span class="tocnumber">3</span> <span class="toctext">시작하기</span></a></li>
+<li class="toclevel-1 tocsection-4"><a href="#어디서_확인했나"><span class="tocnumber">4</span> <span class="toctext">어디서 확인했나</span></a></li>
+</ul>
+</div>
+
 <div class="mw-heading mw-heading2"><h2 id="되는_것"><span id=".EB.90.98.EB.8A.94_.EA.B2.83"></span>되는 것</h2></div>
 <table class="wikitable">
 <tbody><tr>
 <th>항목</th>
-<th>상태
+<th>어떻게
 </th></tr>
 <tr>
-<td>한국어 입력과 글꼴</td>
+<td>한국어 UI와 글꼴</td>
 <td>됨
 </td></tr>
 <tr>
 <td>이모지</td>
-<td>됨, 패치한 Wine. 흑백입니다
-</td></tr>
-<tr>
-<td>이미지와 스크린샷 붙여넣기</td>
-<td>됨, 패치한 Wine
-</td></tr>
-<tr>
-<td>QWERTY가 아닌 자판의 단축키</td>
-<td>됨, 패치한 Wine
+<td>됨, 패치한 Wine(0001). 흑백입니다
 </td></tr>
 <tr>
 <td>두 손가락 스크롤</td>
-<td>됨, 패치한 Wine
+<td>됨, 패치한 Wine(0002)
 </td></tr>
 <tr>
-<td>트레이 아이콘과 우클릭 메뉴</td>
-<td>됨, GNOME 확장
+<td>이미지·스크린샷 붙여넣기</td>
+<td>됨, 패치한 Wine(0003, 0006)
 </td></tr>
 <tr>
-<td>새 메시지 팝업이 포커스를 안 뺏음</td>
-<td>됨, GNOME 확장
+<td>QWERTY가 아닌 자판의 단축키</td>
+<td>됨, 패치한 Wine(0004)
 </td></tr>
 <tr>
-<td>창이 스스로 앞으로 나오기</td>
-<td>됨, 패치한 Wine
+<td>트레이 우클릭 메뉴</td>
+<td>됨, 패치한 Wine(0005) + 확장
+</td></tr>
+<tr>
+<td>알림을 누르면 대화창이 앞으로</td>
+<td>됨, 패치한 Wine(0007)
+</td></tr>
+<tr>
+<td>입력기를 바꾼 뒤 한글 입력</td>
+<td>됨, 패치한 Wine(0010)
+</td></tr>
+<tr>
+<td>새 메시지 팝업 위치와 포커스</td>
+<td>됨, 확장
+</td></tr>
+<tr>
+<td>알림이 남기는 유령 창</td>
+<td>숨김, 확장
+</td></tr>
+<tr>
+<td>스크롤할 때 뜨는 날짜</td>
+<td>위치 조정, 확장
+</td></tr>
+<tr>
+<td>Alt-Tab 아이콘과 이름</td>
+<td>됨
 </td></tr></tbody></table>
-<p>고친 것들이 왜 고쳐야 했는지는 저장소의 <code>patches/README.md</code>에
-하나씩 적혀 있습니다. 대부분 업스트림 Wine의 버그이고, 몇 개는 아직
-업스트림에 열려 있는 채입니다.
+<div class="mw-heading mw-heading2"><h2 id="알아둘_것"><span id=".EC.95.8C.EC.95.84.EB.91.98_.EA.B2.83"></span>알아둘 것</h2></div>
+<p><b>알림이 올 때는 창이 앞으로 나오지 않습니다.</b> 일부러 그렇습니다.
+윈도우도 같습니다. 배경 프로그램이 화면을 가로채려 하면 OS가 거절하고
+작업 표시줄 단추만 깜빡입니다. 알림을 <b>누르면</b> 그때 올라옵니다.
+</p><p><b>이모지는 흑백입니다.</b> 컬러 글리프를 그릴 길이 Wine의 텍스트 경로에
+아예 없습니다. 글자는 나오고 색만 없습니다.
+</p><p><b>카카오톡 자체는 들어있지 않습니다.</b> 카카오의 것이라 배포할 수
+없습니다. 런처가 첫 실행 때 [<a rel="nofollow" class="external free" href="https://www.kakaocorp.com/page/service/service/KakaoTalk">https://www.kakaocorp.com/page/service/service/KakaoTalk</a>
+공식 설치 파일]을 받아옵니다.
 </p>
 <div class="mw-heading mw-heading2"><h2 id="시작하기"><span id=".EC.8B.9C.EC.9E.91.ED.95.98.EA.B8.B0"></span>시작하기</h2></div>
-<p><a href="./설치.html" title="설치">설치</a>를 보세요. 한 줄입니다.
+<p><a href="./설치.html" title="설치">설치</a>를 보세요.
 </p>
-<div class="mw-heading mw-heading2"><h2 id="이게_아닌_것"><span id=".EC.9D.B4.EA.B2.8C_.EC.95.84.EB.8B.8C_.EA.B2.83"></span>이게 아닌 것</h2></div>
-<p>카카오톡 자체는 여기 없고 있을 수도 없습니다. 카카오가 배포할 것입니다.
-런처가 첫 실행 때 [<a rel="nofollow" class="external free" href="https://www.kakaocorp.com/page/service/service/KakaoTalk">https://www.kakaocorp.com/page/service/service/KakaoTalk</a> 공식
-설치 파일]을 받아옵니다.
-</p><p>이 저장소가 배포하는 것은 패치한 Wine과, 그것을 담는 flatpak과, 창을
-다루는 GNOME 확장입니다.
+<div class="mw-heading mw-heading2"><h2 id="어디서_확인했나"><span id=".EC.96.B4.EB.94.94.EC.84.9C_.ED.99.95.EC.9D.B8.ED.96.88.EB.82.98"></span>어디서 확인했나</h2></div>
+<p>Fedora 43, GNOME 49 Wayland, 패치한 Wine 11.18, 카카오톡 26.8(64비트).
+</p><p>고친 것들이 왜 고쳐야 했는지는 저장소의
+[<a rel="nofollow" class="external free" href="https://github.com/chaotic-ground/kakaotalk-on-wine/blob/main/patches/README.md">https://github.com/chaotic-ground/kakaotalk-on-wine/blob/main/patches/README.md</a>
+patches/README.md]에 하나씩 적혀 있습니다. 대부분 업스트림 Wine의
+버그이고, 몇 개는 아직 업스트림에 열려 있는 채입니다.
 </p>
 </div>
 <div class="printfooter" data-nosnippet="">Retrieved from "<a dir="ltr" href="index.html">index.html</a>"</div></div>
@@ -183,7 +215,7 @@ RLPAGEMODULES=[];</script>
 			<a href="https://www.mediawiki.org/" class="cdx-button cdx-button--fake-button cdx-button--size-large cdx-button--fake-button--enabled"><picture><source media="(min-width: 500px)" srcset="./assets/img-8a482a3be80b.svg" width="88" height="31"><img src="./assets/img-927df56b7f04.svg" alt="Powered by MediaWiki" lang="en" width="25" height="25" loading="lazy"></picture></a><a href="https://github.com/chaotic-ground/wikven" class="cdx-button cdx-button--fake-button cdx-button--size-large cdx-button--fake-button--enabled"><picture><source media="(min-width: 500px)" srcset="./assets/img-47dbe07cd516.svg" width="88" height="31"><img src="./assets/img-9c8019424ff1.svg" width="25" height="25" alt="Built with wikven" lang="en" loading="lazy"></picture></a>
 		</div>
 		<ul id="f-list">
-			<li id="lastmod"> This page was last edited on 2 October 2026, at 05:45.</li>
+			<li id="lastmod"> This page was last edited on 2 October 2026, at 09:06.</li>
 			<li id="wikven-licenses"><a href="./Licenses.html">Licenses</a></li>
 		</ul>
 	</div>

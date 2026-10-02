@@ -507,11 +507,10 @@ RLSTATE={"site.styles":"ready","user.styles":"ready","user":"ready","user.option
 					<div id="contentSub"><div id="mw-content-subtitle"></div></div>
 					
 					
-					<div id="mw-content-text" class="mw-body-content"><div class="mw-content-ltr mw-parser-output" lang="en" dir="ltr"><p>flatpak 하나입니다. root도 암호도 필요 없습니다.
+					<div id="mw-content-text" class="mw-body-content"><div class="mw-content-ltr mw-parser-output" lang="en" dir="ltr"><p>flatpak 하나와 GNOME 확장 하나입니다. root도 암호도 필요 없습니다.
 </p>
 <div class="mw-heading mw-heading2"><h2 id="앱"><span id=".EC.95.B1"></span>앱</h2></div>
-<div class="mw-highlight mw-highlight-lang-sh mw-content-ltr mw-highlight-copy" dir="ltr"><pre><span></span>curl<span class="w"> </span>-fL<span class="w"> </span>-o<span class="w"> </span>kakaotalk.flatpak<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>https://github.com/chaotic-ground/kakaotalk-on-wine/releases/latest/download/kakaotalk.flatpak
+<div class="mw-highlight mw-highlight-lang-sh mw-content-ltr mw-highlight-copy" dir="ltr"><pre><span></span>curl<span class="w"> </span>-fLO<span class="w"> </span>https://github.com/chaotic-ground/kakaotalk-on-wine/releases/latest/download/kakaotalk.flatpak
 flatpak<span class="w"> </span>install<span class="w"> </span>--user<span class="w"> </span>kakaotalk.flatpak
 </pre></div>
 <p>런타임은 flathub에서 옵니다. 거의 모두가 이미 갖고 있습니다. 없으면
@@ -522,24 +521,38 @@ flatpak<span class="w"> </span>install<span class="w"> </span>--user<span class=
 </pre></div>
 <p>첫 실행 때 카카오 CDN에서 설치 파일을 받아 프리픽스를 만듭니다. 몇 분
 걸리고, 그 다음부터는 바로 뜹니다.
+</p><p>64비트 클라이언트를 씁니다. 카카오는 윈도우용을 셋 배포하는데, 검색으로
+나오는 <code>app-pc.kakaocdn.net/talk/win32/</code>는 32비트입니다.
 </p>
 <div class="mw-heading mw-heading2"><h2 id="GNOME_확장"><span id="GNOME_.ED.99.95.EC.9E.A5"></span>GNOME 확장</h2></div>
-<p>GNOME에서 쓰신다면 같이 깔 것이 하나 더 있습니다. 트레이 메뉴, 알림
-팝업의 자리와 포커스, alt-tab 아이콘을 다루는 것이 이쪽입니다. 앱이
-닿을 수 없는 곳에 살기 때문에 손으로 깔아야 합니다.
+<p>팝업의 자리와 포커스, 트레이를 대신하는 인디케이터, 카카오톡 자신의 메뉴
+열기를 맡습니다. 샌드박스 안의 앱은
+<code>~/.local/share/gnome-shell/extensions</code>에 아무것도 넣을 수
+없어서 손으로 깔아야 합니다.
 </p>
 <div class="mw-highlight mw-highlight-lang-sh mw-content-ltr mw-highlight-copy" dir="ltr"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/chaotic-ground/kakaotalk-on-wine
 cp<span class="w"> </span>-r<span class="w"> </span>kakaotalk-on-wine/gnome/kakaotalk-popup@lens0021<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>~/.local/share/gnome-shell/extensions/
 gnome-extensions<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>kakaotalk-popup@lens0021
 </pre></div>
-<p>확장만 먼저 깔고 인디케이터에서 앱을 받을 수도 있습니다. 아무것도
-설치되어 있지 않을 때 인디케이터가 그 길을 안내합니다.
+<p>확장을 먼저 깔아도 됩니다. 아무것도 설치되어 있지 않으면 인디케이터가
+flatpak 설치를 권합니다.
+</p><p>설정은
+[<a rel="nofollow" class="external free" href="https://github.com/chaotic-ground/kakaotalk-on-wine/blob/main/gnome/README.md">https://github.com/chaotic-ground/kakaotalk-on-wine/blob/main/gnome/README.md</a>
+gnome/README.md]에 있습니다.
 </p>
 <div class="mw-heading mw-heading2"><h2 id="안_될_때"><span id=".EC.95.88_.EB.90.A0_.EB.95.8C"></span>안 될 때</h2></div>
-<p>증상이 "없는 파일"이 아니라 엉뚱한 Wine 오류로 나타나는 경우가 있습니다.
-백신이 Wine의 PE 모듈을 격리한 것입니다. 저장소의
-<code>README.md</code>에 그 이야기가 있습니다.
+<p><b>증상이 없는 파일이 아니라 엉뚱한 Wine 오류로 나타납니다.</b>
+</p>
+<div class="mw-highlight mw-highlight-lang-text mw-content-ltr" dir="ltr"><pre><span></span>wine: Call from ... to unimplemented function user32.dll.CreateDialogParamW
+</pre></div>
+<p>백신이 Wine의 PE 모듈을 격리한 것입니다. 한 번에 92개가 사라진 적이
+있습니다. flatpak 안의 Wine은 읽기 전용이라 안전하고, 프리픽스는
+<code>~/.var/app</code> 아래라 그렇지 않습니다.
+</p><p><b>돌고 있는 앱에 <code>flatpak run</code>을 한 번 더 하지 마세요.</b> 앱이
+죽습니다. 두 번째 클라이언트 이야기가 아니라, 다른 프로세스를 들여다보는
+wine 프로세스면 무엇이든 그렇습니다. 인스턴스마다 PID 네임스페이스가 따로
+라서입니다. 창을 되찾으려면 패널 인디케이터를 쓰세요.
 </p>
 </div>
 <div class="printfooter" data-nosnippet="">Retrieved from "<a dir="ltr" href="설치.html">설치.html</a>"</div></div>
@@ -552,7 +565,7 @@ gnome-extensions<span class="w"> </span><span class="nb">enable</span><span clas
 			
 <footer id="footer" class="mw-footer" >
 	<ul id="footer-info">
-	<li id="footer-info-lastmod"> This page was last edited on 2 October 2026, at 05:45.</li>
+	<li id="footer-info-lastmod"> This page was last edited on 2 October 2026, at 09:06.</li>
 </ul>
 
 	<ul id="footer-places">
