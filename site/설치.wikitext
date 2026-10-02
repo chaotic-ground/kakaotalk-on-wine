@@ -42,18 +42,22 @@ flatpak 설치를 권해줍니다.
 [https://github.com/chaotic-ground/kakaotalk-on-wine/blob/main/gnome/README.md gnome/README.md]에 있습니다.
 
 == 문제 해결 ==
-'''증상이 없는 파일이 아니라 엉뚱한 Wine 오류로 나타납니다.'''
+
+=== 백신이 Wine을 격리할 때 ===
+백신이 Wine의 PE 모듈을 격리하면 없어진 파일을 탓하는 대신 엉뚱한 Wine
+오류가 납니다.
 
 <syntaxhighlight lang="text">
 wine: Call from ... to unimplemented function user32.dll.CreateDialogParamW
 </syntaxhighlight>
 
-백신이 Wine의 PE 모듈을 격리하면 이렇게 됩니다. 한 번에 92개가 사라진
-적도 있습니다. flatpak 안의 Wine은 읽기 전용이라 안전하지만, 프리픽스는
-<code>~/.var/app</code> 아래에 있어 그렇지 못합니다.
+한 번에 92개가 사라진 적도 있습니다. flatpak 안의 Wine은 읽기 전용이라
+안전하지만, 프리픽스는 <code>~/.var/app</code> 아래에 있어 그렇지
+못합니다.
 
-'''돌고 있는 앱에 <code>flatpak run</code>을 한 번 더 하지 마십시오.'''
-앱이 죽습니다. 두 번째 클라이언트를 띄우는 이야기가 아니라, 다른
-프로세스를 들여다보는 wine 프로세스면 무엇이든 그렇습니다. 인스턴스마다
-PID 네임스페이스가 따로이기 때문입니다. 창을 되찾고 싶을 때는 패널
-인디케이터를 쓰십시오.
+=== 두 번 실행하면 안 되는 이유 ===
+돌고 있는 앱에 <code>flatpak run</code>을 한 번 더 하면 앱이 죽습니다.
+두 번째 클라이언트를 띄우는 이야기가 아니라, 다른 프로세스를 들여다보는
+wine 프로세스면 무엇이든 그렇습니다. 인스턴스마다 PID 네임스페이스가
+따로이기 때문입니다. 창을 되찾고 싶을 때는 패널 인디케이터를
+쓰십시오.
