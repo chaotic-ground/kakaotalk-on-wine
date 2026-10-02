@@ -37,6 +37,16 @@ config:
   # 나온다. 굽는 것 자체는 상대 경로라서 이 값과 무관하게 어디서나 돈다.
   WikvenSiteUrl: https://chaotic-ground.github.io/kakaotalk-on-wine/
 
+  # Search Console에 이 사이트의 주인이 누구인지 증명한다. WikiSEO가 모든
+  # 문서의 head에 meta 태그로 넣는다.
+  #
+  # 값은 자격 증명이 아니다. 주장 말고는 아무것도 주지 않고, 구글은 사이트의
+  # 아무 문서나 받아본 사람에게 이 값을 그대로 돌려준다.
+  #
+  # 토큰이 속성이 아니라 계정에 묶여 있어서 chaotic-ground의 다른 사이트와
+  # 같은 값이다. 파일로 증명하는 쪽은 속성마다 이름이 다르다.
+  GoogleSiteVerificationKey: 2rzhjoB0M6oJLKFCyvqcW6_SGAkxpf7o4RIWOGfpfPY
+
   # 검색 결과에서 제목 밑에 뜨는 문장. 없으면 크롤러가 아무 데서나
   # 주워오고, 이런 문서에서는 대개 길잡이 조각이 걸린다. WikiSEO가
   # TextExtracts에 첫 문단을 물어 넣어주므로 문서마다 적지 않아도 된다.
