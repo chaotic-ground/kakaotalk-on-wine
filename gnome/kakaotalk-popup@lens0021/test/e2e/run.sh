@@ -76,8 +76,12 @@ gnome-shell --headless --no-x11 --virtual-monitor 1280x800 \
 SHELL_PID=$!
 
 wait_for "셸이 소켓을 여는 것" 90 test -S "$XDG_RUNTIME_DIR/$DISPLAY_NAME"
-wait_for "셸이 버스에 오르는 것" 90 \
-  gdbus introspect --session --dest org.gnome.Shell --object-path /org/gnome/Shell
+# 이름이 올라온 것과 쓸 수 있는 것은 다르다. introspect는 객체가 생기기
+# 전에도 통과해서, 바로 다음 줄이 "Object does not exist"로 떨어졌다.
+# 실제로 부를 메서드로 묻는다.
+wait_for "셸이 확장 인터페이스를 여는 것" 180 \
+  gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell \
+    --method org.gnome.Shell.Extensions.ListExtensions
 
 gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell \
   --method org.gnome.Shell.Extensions.EnableExtension "$EXT" >/dev/null
