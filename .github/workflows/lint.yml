@@ -73,6 +73,11 @@ jobs:
       - name: actionlint
         uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7  # v2.2.0
 
+      # 한 사실이 두 파일에 적힌 자리가 어긋나지 않았는지 봅니다. opengrep은
+      # 파일 하나 안의 모양을 보고 이건 파일 둘 사이를 보므로 따로 합니다.
+      - name: SSOT
+        run: ./tools/check-ssot
+
       # 이 저장소에만 해당하는 불변식. 일반 린터가 모르는 것들이고, 셋 다
       # 지키지 못해서 버그가 났습니다. .opengrep/rules.yml을 보세요.
       #

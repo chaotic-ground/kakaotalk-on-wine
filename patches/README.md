@@ -87,8 +87,10 @@ sha256sum "$(find ~/.local/share/flatpak/app/io.github.chaotic_ground.KakaoTalk 
 ### 백신
 
 여기서 빌드한 Wine은 `$HOME` 아래 있어 백신이 닿습니다. flatpak 안으로
-들어가면 읽기 전용이라 안전합니다. 만든 직후 92개 파일이 사라지면 그 일이
-일어난 것입니다.
+들어가면 읽기 전용이 되어 그때부터는 안전하니, 위험한 것은 빌드한 직후부터
+패키징할 때까지입니다. 증상은
+[설치 문서](https://chaotic-ground.github.io/kakaotalk-on-wine/설치#백신이_Wine을_격리할_때)를
+보세요.
 
 ## 화면을 안 뺏고 시험하기
 

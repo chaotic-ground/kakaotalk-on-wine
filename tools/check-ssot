@@ -1,0 +1,42 @@
+#!/bin/bash
+# 한 사실이 두 파일에 적혀 있고 둘이 어긋날 수 있는 자리를 지킨다.
+#
+# 여기 있는 것들은 opengrep으로 못 한다. 그쪽은 파일 하나 안의 모양을 보고,
+# 이건 파일 둘 사이가 맞는지를 본다.
+set -uo pipefail
+cd "$(dirname "$0")/.." || exit 2
+
+fail=0
+say() { printf '%s\n' "$1" >&2; fail=1; }
+
+# 1. 패치 파일이 원본이다. site/패치/NNNN.wikitext가 patches/ 아래의 파일
+#    이름을 적는데, 패치를 다시 이름 지으면 사이트의 링크가 404가 된다.
+for page in site/패치/[0-9]*.wikitext; do
+  num=$(basename "$page" .wikitext)
+  named=$(sed -n 's/^|패치=//p' "$page")
+  [[ -n $named ]] || { say "$page: |패치= 가 없다"; continue; }
+  [[ -f patches/$named ]] || say "$page: patches/$named 가 없다"
+  [[ $named == "$num"-* ]] || say "$page: |패치= 가 $num 으로 시작하지 않는다 ($named)"
+  [[ $(sed -n 's/^|번호=//p' "$page") == "$num" ]] || say "$page: |번호= 가 파일 이름과 다르다"
+done
+
+# 2. 반대 방향. 패치를 더하고 쪽을 안 쓰면 첫 화면의 표에서 빠진다.
+for patch in patches/[0-9]*.patch; do
+  num=${patch#patches/}; num=${num%%-*}
+  [[ -f site/패치/$num.wikitext ]] || say "$patch: site/패치/$num.wikitext 가 없다"
+done
+
+# 3. 매니페스트가 원본이다. bundle.yml은 자산을 올릴 릴리스 이름을 따로
+#    들고 있는데, 매니페스트는 모든 원본 URL에 그 이름을 적는다. 둘이
+#    어긋나면 번들은 지어지고 자산만 엉뚱한 릴리스로 간다.
+manifest=flatpak/io.github.chaotic_ground.KakaoTalk.yml
+release=$(sed -n 's/^  RELEASE: //p' .github/workflows/bundle.yml)
+in_manifest=$(grep -oP '(?<=/releases/download/)[^/]+' "$manifest" | sort -u)
+if [[ -z $release ]]; then
+  say "bundle.yml: RELEASE 를 못 찾았다"
+elif [[ $in_manifest != "$release" ]]; then
+  say "bundle.yml 의 RELEASE($release) 와 매니페스트의 릴리스($in_manifest)가 다르다"
+fi
+
+[[ $fail == 0 ]] && echo "ssot: 어긋난 곳 없음"
+exit "$fail"

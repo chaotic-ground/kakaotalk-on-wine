@@ -20,14 +20,14 @@ Wayland가 부족한 부분을 메우는 GNOME 확장 하나로 이루어집니�
 
 ### 두 번째 `flatpak run`
 
-실행 중인 앱에 한 번 더 하면 앱이 죽습니다. 두 번째 클라이언트 얘기가
-아니라 다른 프로세스를 들여다보는 wine 프로세스면 무엇이든 그런데,
-`wine tasklist` 하나로 5초 안에 클라이언트와 explorer가 사라집니다.
-인스턴스마다 PID 네임스페이스가 따로라서입니다.
+실행 중인 앱에 한 번 더 하면 앱이 죽습니다. 이유는
+[설치 문서](https://chaotic-ground.github.io/kakaotalk-on-wine/설치#두_번_실행하면_안_되는_이유)에
+있고, 코드에서 중요한 것은 그 결과입니다. 그래서 `--show`나 `--quit`은
+`~/.var/app` 아래 파일에 단어를 쓰고, 앱을 들고 있는 인스턴스가 읽습니다.
+`flatpak/kakaotalk`의 `serve_control`을 보세요.
 
-그래서 `--show`나 `--quit`은 `~/.var/app` 아래 파일에 단어를 쓰고, 앱을
-들고 있는 인스턴스가 읽습니다. `flatpak/kakaotalk`의 `serve_control`을
-보세요.
+고치다가 확인할 일이 있으면 `wine tasklist` 하나로 5초 안에 클라이언트와
+explorer가 사라지는 것을 볼 수 있습니다.
 
 ### 종료
 
@@ -45,9 +45,10 @@ Wayland가 부족한 부분을 메우는 GNOME 확장 하나로 이루어집니�
 
 ### 백신
 
-직접 빌드한 Wine을 `$HOME` 아래에 두면 PE 모듈이 격리됩니다. 92개가
-사라진 적이 있는데, 증상은 없는 파일이 아니라 엉뚱한 Wine 오류입니다.
-`WINEDEBUG=+loaddll`을 켜면 한 줄 위에 진짜 이유가 있습니다.
+증상과 무엇이 안전한지는
+[설치 문서](https://chaotic-ground.github.io/kakaotalk-on-wine/설치#백신이_Wine을_격리할_때)에
+있습니다. 고칠 때 알아야 할 것은 하나 더 있습니다. `WINEDEBUG=+loaddll`을
+켜면 엉뚱한 오류 한 줄 위에 진짜 이유가 나옵니다.
 
 ## 구성
 
