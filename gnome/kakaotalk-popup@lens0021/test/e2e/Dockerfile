@@ -23,6 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       mesa-vulkan-drivers \
       fonts-noto-cjk \
       procps \
+      util-linux \
     && rm -rf /var/lib/apt/lists/*
 
 # 한국어 제목을 쓰므로 UTF-8이어야 한다. 그러지 않으면 제목 비교가
@@ -32,9 +33,17 @@ ENV LANG=C.UTF-8 \
     GALLIUM_DRIVER=llvmpipe \
     LIBGL_ALWAYS_SOFTWARE=1
 
-# root로 돌리면 gnome-shell이 거부한다.
-RUN useradd --create-home --uid 1001 tester
-USER tester
+# 시험은 평범한 사용자로 돈다. gnome-shell이 root를 거부한다. 다만
+# 시스템 버스는 root가 띄워야 해서, 진입점이 root로 시작해 거기서
+# 갈라준다. entrypoint.sh를 보라.
+RUN useradd --create-home --uid 1001 tester \
+    && mkdir -p /home/tester/run \
+    && chown tester:tester /home/tester/run \
+    && chmod 700 /home/tester/run
+
+COPY entrypoint.sh /usr/local/bin/e2e-entrypoint
+RUN chmod +x /usr/local/bin/e2e-entrypoint
+
 WORKDIR /home/tester
 ENV XDG_RUNTIME_DIR=/home/tester/run
-RUN mkdir -p /home/tester/run && chmod 700 /home/tester/run
+ENTRYPOINT ["/usr/local/bin/e2e-entrypoint"]
