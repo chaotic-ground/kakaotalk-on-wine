@@ -358,6 +358,7 @@ export default class KakaoTalkPopup {
             // 이 코드가 읽힐 때 이미 떠 있던 장식들. 없으면 다시 읽어도
             // 화면에 있는 것은 그대로인데, 바꾼 것이 먹히는지 알아보는
             // 방법으로는 나쁘다.
+            this._unhideWrongly(window);
             this._hideChrome(window);
             // 이미 떠 있던 창은 _handle을 거치지 않았으므로, 사라질 때
             // 인디케이터에게 말해줄 방법이 없었다.
@@ -873,6 +874,26 @@ export default class KakaoTalkPopup {
     //
     // 메시지 창이 제목 없는 쪽이므로, 빈 제목이 건드리지 말아야 할
     // 표식이다.
+    // 이 파일의 이전 판이 숨겨둔 것을 되돌린다. 액터에 건 hide()는
+    // 추적되지 않아서 disable()이 놓아주지 않고, 확장을 다시 읽어도 창은
+    // 숨겨진 채 남는다. 고친 판을 올려도 화면은 그대로인 셈이다.
+    //
+    // 조건을 좁게 잡는다. 숨길 이유가 없는 창, 즉 띠도 그림자도 아닌데
+    // 액터만 숨겨져 있는 것만 되돌린다. 트레이 창은 우리가 일부러 숨기고
+    // 있고 wm_class가 다르므로 여기 걸리지 않는다.
+    _unhideWrongly(window) {
+        if (window.get_wm_class() !== 'kakaotalk.exe')
+            return;
+        if (this._isChrome(window))
+            return;
+        const actor = window.get_compositor_private();
+        if (!actor || actor.visible)
+            return;
+        actor.show();
+        console.log(`${TAG} unhid a window that should not have been hidden: ` +
+                    `${this._describe(window)}`);
+    }
+
     _hideChrome(window) {
         if (!this._config.hide_popup_chrome)
             return false;
@@ -881,8 +902,23 @@ export default class KakaoTalkPopup {
             this._watchChrome(window);
             return false;
         }
+        if (!this._isChrome(window))
+            return false;
         window.get_compositor_private()?.hide();
         return true;
+    }
+
+    // 띠는 제목이 "카카오톡"이고 진짜 목록 창도 그렇다. 제목만 보고
+    // 숨기면 목록 창을 숨긴다. 실제로 그랬고, 창은 있는데 화면에 없는
+    // 상태가 되어 인디케이터가 그것을 올리고 있었다. 셸은 showing이라
+    // 하고 앱은 visible이라 하는데 아무것도 안 보였다.
+    //
+    // 높이로 가른다. 띠는 29, 목록 창은 562다. 그림자는 제목이 다르므로
+    // 이 검사를 거치지 않는다.
+    _isChrome(window) {
+        if (window.get_title() === POPUP_TITLE)
+            return true;
+        return window.get_frame_rect().height < MAIN_MIN_HEIGHT;
     }
 
     // 창이 처음 그려질 때는 아직 제목이 없고, 띠와 메시지를 가를 다른
@@ -897,6 +933,9 @@ export default class KakaoTalkPopup {
         const id = window.connect('notify::title', () => {
             const title = window.get_title();
             if (title !== POPUP_TITLE && title !== '카카오톡')
+                return;
+            // 제목이 왔다고 띠인 것은 아니다. 목록 창도 이 이름을 단다.
+            if (!this._isChrome(window))
                 return;
             window.disconnect(id);
             window._kakaotalkChromeWatch = false;
@@ -1409,6 +1448,25 @@ export default class KakaoTalkPopup {
         return index >= 0 && global.display.get_monitor_in_fullscreen(index);
     }
 
+    // 액터가 들고 있는 것. 없으면 그릴 것이 없고, 숨겨졌거나 투명하거나
+    // 크기가 0이면 있어도 안 보인다.
+    _actorState(window) {
+        const actor = window.get_compositor_private();
+        if (!actor)
+            return 'none';
+        try {
+            return [
+                actor.visible ? 'visible' : 'hidden',
+                `${Math.round(actor.width)}x${Math.round(actor.height)}`,
+                `at=${Math.round(actor.x)},${Math.round(actor.y)}`,
+                `opacity=${actor.opacity}`,
+            ].join(',');
+        } catch (e) {
+            // 액터가 창보다 먼저 갔다.
+            return 'gone';
+        }
+    }
+
     _describe(window) {
         const rect = window.get_frame_rect();
         return [
@@ -1426,6 +1484,9 @@ export default class KakaoTalkPopup {
             `showing=${window.showing_on_its_workspace()}`,
             `ws=${window.get_workspace()?.index() ?? -1}`,
             `monitor=${window.get_monitor()}`,
+            // 창이 있다는 것과 그려진다는 것은 다른 질문이다. 창 쪽만
+            // 보고 있다가 두 번 헤맸다. 그리는 쪽은 액터다.
+            `actor=${this._actorState(window)}`,
         ].join(' ');
     }
 }
