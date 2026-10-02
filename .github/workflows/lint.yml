@@ -1,0 +1,74 @@
+---
+name: Lint
+
+# 린트는 전부 여기 모인다. 이 저장소는 bash 1000줄, JS 1600줄, 그리고
+# C와 파이썬과 YAML이 조금씩이다. 손으로 보던 것을 기계가 본다.
+#
+# 가장 값어치 있는 것은 린터가 아니라 classify 시험이다. 이 저장소가
+# 세 번 넘어진 자리가 "이 창이 무엇인가"를 잘못 답한 것이었고, 린터도
+# 타입도 그런 것은 잡지 않는다.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gjs shellcheck yamllint
+
+      # 확장이 실제로 도는 엔진이 gjs다. 여기서 파싱되지 않으면 셸에서도
+      # 안 된다. 셸 쪽 resource:// import는 밖에서 풀리지 않으므로
+      # ImportError는 지나가고 SyntaxError만 본다.
+      - name: Check the extension parses
+        run: |
+          for file in gnome/kakaotalk-popup@lens0021/*.js; do
+            if gjs -m "$file" 2>&1 | grep -q SyntaxError; then
+              echo "::error file=$file::SyntaxError"
+              gjs -m "$file" 2>&1 | grep SyntaxError
+              exit 1
+            fi
+          done
+
+      # 창 분류 시험. 프레임워크 없이 gjs로 돈다.
+      - name: Test the classifier
+        run: gjs -m 'gnome/kakaotalk-popup@lens0021/test/classify.test.js'
+
+      - name: Biome
+        uses: biomejs/setup-biome@4c91541eaada48f67d7dbd7833600ce162b68f51  # v2.7.1
+        with:
+          version: 2.5.13
+      - run: biome ci .
+
+      # 쉘은 셰방으로 고른다. bin/에는 파이썬도 있다.
+      - name: ShellCheck
+        run: |
+          mapfile -t files < <(grep -rl '^#!/.*\(bash\|sh\)' bin flatpak \
+            --exclude-dir=build-dir --exclude-dir=repo)
+          printf '%s\n' "${files[@]}"
+          shellcheck -S warning "${files[@]}"
+
+      - name: Ruff
+        uses: astral-sh/ruff-action@278981a28ce3188b1e39527901f38254bf3aac89  # v4.1.0
+
+      - name: yamllint
+        run: yamllint .github/workflows/ flatpak/*.yml site/.wikven.yaml
+
+      - name: actionlint
+        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7  # v2.2.0

@@ -61,6 +61,8 @@ import GObject from 'gi://GObject';
 import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
+// 창 분류는 셸을 모르는 쪽에 있다. 시험에서 부를 수 있도록.
+import { classify, POPUP_TITLE } from './classify.js';
 // extension.js가 읽어온다. 로그아웃 없이 고칠 수 있도록 enable()마다 이
 // 파일을 다시 import한다. Extension의 하위 클래스가 아니라 그냥 클래스인
 // 이유는, 셸이 보는 것은 언제나 로더뿐이기 때문이다.
@@ -124,24 +126,7 @@ const GROUP_GAP_US = 5 * 1000 * 1000;
 
 // 카카오톡이 새 메시지를 담는 창. 미끄러지는 동안 프레임마다 새 창으로
 // 다시 그려져서 이 이름이 자주 나온다.
-const POPUP_TITLE = 'KakaoTalkShadowWnd';
 
-// 이보다 작으면서 자기를 카카오톡이라고 하는 창은 진짜가 아니라 남은
-// 것이다. _findMainWindow를 보라.
-const MAIN_MIN_HEIGHT = 240;
-
-// 제목 없는 소유 창이 "앱이 자기 창 위에 그리는 것"으로 인정받으려면 들어야
-// 하는 크기 범위. 대화를 스크롤할 때 뜨는 날짜 같은 것이다. 재봤다. 그
-// 날짜는 82x33이고, 알림의 그림자는 폭 318, 메시지도 그보다 별로 작지
-// 않다.
-//
-// 하한은 장식이 아니다. 없을 때 16x16짜리 창을 집어다가 대화창 위로 옮기고
-// 영구히 맨 앞에 올렸다. 그런 창이 여럿 있는데 무엇을 위한 것인지 여기서는
-// 모른다. 무엇이든 간에 위치를 정해줄 대상은 아니다. _placeOverlay를
-// 보라.
-const OVERLAY_MAX_WIDTH = 200;
-const OVERLAY_MIN_WIDTH = 40;
-const OVERLAY_MIN_HEIGHT = 20;
 
 // 올라갈 창 안에서의 자리. 가운데, 그리고 방 머리글을 지날 만큼 아래로.
 // 이 크기들에서는 높이의 12분의 1쯤이 그 자리다. 진짜 답은 앱이 알고
@@ -325,7 +310,7 @@ export default class KakaoTalkPopup {
                 // 넘겨주기에 좋은 상태가 아니다.
                 if (show)
                     obj.show();
-            } catch (e) {
+            } catch {
                 // 창이 우리보다 먼저 갔다. 놓아줄 것이 없다.
             }
         }
@@ -447,51 +432,10 @@ export default class KakaoTalkPopup {
     // 앞의 포커스가 카카오톡이었으면 두지 않는다. 앱 안에서 창이 오가는
     // 것은 앱의 일이고, 거기까지 끼어들면 알림을 눌렀을 때 열리는 대화방도
     // 걷어차게 된다.
-    // 이 창이 무엇인가. 한 자리에서 답한다.
-    //
-    // 전에는 여섯 군데가 제각기 답했다. 어떤 곳은 제목만 보고, 어떤 곳은
-    // 제목과 높이를 보고, 어떤 곳은 폭까지 봤다. 같은 질문에 다른 답이
-    // 나오는 구조였고 실제로 그렇게 됐다. _hideChrome이 높이를 안 봐서
-    // 제목이 "카카오톡"인 목록 창을 띠로 보고 숨겼다. 창은 있는데 화면에
-    // 없는 상태가 되었고, 인디케이터가 그것을 올리고 있었다.
-    //
-    // 돌려주는 값:
-    //   tray     Wine이 띄우는 트레이 창. 우리 pid가 아니라 explorer의 것
-    //   shadow   알림의 그림자. 미끄러지는 프레임마다 다시 만들어진다
-    //   band     알림이 남기는 빈 띠. 제목이 목록 창과 똑같다
-    //   overlay  앱이 자기 창 위에 그리는 것. 스크롤할 때 뜨는 날짜 같은
-    //   piece    알림의 나머지 조각. 메시지와 답장 입력칸이 여기 있다
-    //   list     목록 창
-    //   chat     대화방 창
-    //   foreign  우리 것이 아님
-    //
-    // 크기 기준은 상수에 있고 그 숫자를 왜 그렇게 잡았는지도 거기 있다.
+
+    // 분류는 classify.js에 있다. 여기서는 pid 집합만 건네준다.
     _classify(window) {
-        // pid를 묻지 않는다. 이 검사는 창이 만들어지는 시점에도 돌고,
-        // 그때는 아직 pid를 배우기 전일 수 있다. 클래스만으로 충분하다.
-        // Wine의 explorer는 이 프리픽스에 하나뿐이다.
-        if (window.get_wm_class() === 'explorer.exe')
-            return 'tray';
-        if (window.get_wm_class() !== 'kakaotalk.exe')
-            return 'foreign';
-        if (!this._pids?.has(window.get_pid()))
-            return 'foreign';
-
-        const title = window.get_title();
-        const rect = window.get_frame_rect();
-        const small = rect.height < MAIN_MIN_HEIGHT;
-
-        if (title === POPUP_TITLE)
-            return 'shadow';
-        if (title === '카카오톡')
-            return small ? 'band' : 'list';
-        if (title === '') {
-            if (rect.width >= OVERLAY_MIN_WIDTH && rect.width < OVERLAY_MAX_WIDTH &&
-                rect.height >= OVERLAY_MIN_HEIGHT && small)
-                return 'overlay';
-            return small ? 'piece' : 'unknown';
-        }
-        return small ? 'piece' : 'chat';
+        return classify(window, this._pids);
     }
 
     _isStealingList(window) {
@@ -571,7 +515,7 @@ export default class KakaoTalkPopup {
 
     _overlayParent() {
         const last = this._lastFocused;
-        if (last && last.get_compositor_private() &&
+        if (last?.get_compositor_private() &&
             ['list', 'chat'].includes(this._classify(last)))
             return last;
         return this._findMainWindow();
@@ -1513,7 +1457,7 @@ export default class KakaoTalkPopup {
                 `at=${Math.round(actor.x)},${Math.round(actor.y)}`,
                 `opacity=${actor.opacity}`,
             ].join(',');
-        } catch (e) {
+        } catch {
             // 액터가 창보다 먼저 갔다.
             return 'gone';
         }

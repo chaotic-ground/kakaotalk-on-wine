@@ -1,0 +1,6 @@
+---
+# 줄 길이만 늘렸다. 이 저장소의 주석은 100자에 맞춰 쓰여 있다.
+extends: relaxed
+rules:
+  line-length:
+    max: 100

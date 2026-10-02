@@ -97,7 +97,7 @@ def main():
     width, height, _planes, bpp = struct.unpack_from("<iihh", icon, 4)
     height //= 2
     if bpp != 32:
-        raise ValueError("icon is %d bpp, not 32" % bpp)
+        raise ValueError(f"icon is {bpp} bpp, not 32")
 
     pixels = icon[40:40 + width * height * 4]
     rows = []

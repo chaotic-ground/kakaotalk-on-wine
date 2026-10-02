@@ -37,7 +37,10 @@ readonly LOG=${KAKAOTALK_TRACE_LOG:-$HOME/kakaotalk-trace.log}
 # 끝부분이고, 제한 없는 로그는 누가 읽기 한참 전에 디스크를 채운다.
 readonly KEEP=${KAKAOTALK_TRACE_LINES:-300000}
 
-readonly REPO="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)"
+# 선언과 대입을 나눈다. readonly와 붙여두면 cd가 실패해도 그 값을
+# 잃는다. readonly의 성공만 남는다.
+REPO="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)"
+readonly REPO
 
 if [[ -n ${1-} ]]; then
   echo "usage: ${0##*/}" >&2
