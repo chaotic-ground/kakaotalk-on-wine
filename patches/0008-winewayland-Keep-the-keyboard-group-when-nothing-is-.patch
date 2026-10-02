@@ -1,0 +1,67 @@
+From 56ab98b0f06afefc164e74f48fda48829995f7e1 Mon Sep 17 00:00:00 2001
+From: lens0021 <lorentz0021@gmail.com>
+Date: Fri, 2 Oct 2026 16:54:14 +0900
+Subject: [PATCH] winewayland: Keep the keyboard group when nothing is focused
+
+Switching to an input method while a window already had focus left the
+process on the wrong keyboard layout, and the application was never told
+to switch to the IME's HKL. Korean stopped going in until the window was
+clicked again.
+
+The group is a property of the seat, not of a window, but
+keyboard_handle_modifiers returned before updating it whenever nothing of
+ours held the keyboard. A group change that arrived in that window was
+lost. What was left behind was the group the keymap handler resets to,
+which is 0, and a keymap arrives on every input source switch.
+
+Clicking the window again worked because that is a focus change, and
+text_input_enter sets the layout from what this function worked out.
+
+Track the group whatever the focus is, and tell a window only when there
+is one. A window that gains focus later is told then.
+---
+ dlls/winewayland.drv/wayland_keyboard.c | 19 ++++++++++++++++---
+ 1 file changed, 16 insertions(+), 3 deletions(-)
+
+diff --git a/dlls/winewayland.drv/wayland_keyboard.c b/dlls/winewayland.drv/wayland_keyboard.c
+index ab21d869..a18e98e5 100644
+--- a/dlls/winewayland.drv/wayland_keyboard.c
++++ b/dlls/winewayland.drv/wayland_keyboard.c
+@@ -638,6 +638,13 @@ static void set_current_xkb_group(xkb_layout_index_t xkb_group)
+     if (hkl == keyboard_hkl) return;
+     keyboard_hkl = hkl;
+ 
++    /* The group belongs to the seat, not to a window, so it is tracked above
++     * whether or not anything of ours has the keyboard. Telling a window is
++     * the part that needs one, and a window that gains focus later is told
++     * then: text_input_enter calls activate_keyboard_hkl with what we have
++     * worked out here. */
++    if (!keyboard->focused_hwnd) return;
++
+     pthread_mutex_lock(&text_input->mutex);
+     ime = text_input->focused_hwnd == keyboard->focused_hwnd;
+     pthread_mutex_unlock(&text_input->mutex);
+@@ -895,11 +902,17 @@ static void keyboard_handle_modifiers(void *data, struct wl_keyboard *wl_keyboar
+ 
+     InterlockedExchange(&process_wayland.input_serial, serial);
+ 
+-    if (!wayland_keyboard_get_focused_hwnd()) return;
+-
+-    TRACE("serial=%u mods_depressed=%#x mods_latched=%#x mods_locked=%#x xkb_group=%d stub!\n",
++    TRACE("serial=%u mods_depressed=%#x mods_latched=%#x mods_locked=%#x xkb_group=%d\n",
+           serial, mods_depressed, mods_latched, mods_locked, xkb_group);
+ 
++    /* Track the group even with nothing of ours focused. This used to return
++     * here first, and a group change that arrived while the keyboard was
++     * between windows was lost. What was left was the group the keymap had
++     * reset to, which is 0, and a keymap arrives on every input source
++     * switch. So switching to an IME left the process on the wrong layout
++     * and the application was never told to switch to the IME's HKL. It
++     * started working when the window was clicked again, because that is a
++     * focus change and text_input_enter sets the layout from here. */
+     pthread_mutex_lock(&keyboard->mutex);
+     xkb_state_update_mask(keyboard->xkb_state, mods_depressed, mods_latched,
+                           mods_locked, 0, 0, xkb_group);
+-- 
+2.55.0
+

@@ -239,6 +239,48 @@ sha256sum "$(find ~/.local/share/flatpak/app/io.github.chaotic_ground.KakaoTalk 
 flatpak 안으로 들어가면 읽기 전용이라 안전합니다. 만든 직후 92개 파일이
 사라지면 그 일이 일어난 것입니다.
 
+## 0008 입력기를 바꾼 뒤 한글이 안 들어감
+
+드보락으로 입력창을 쓰다가 글벗(ibus 한글 입력기)으로 바꾸면 한글이
+안 들어갔습니다. 다른 곳을 클릭했다가 입력창을 다시 누르면 그제야
+됐습니다.
+
+Wayland 단은 멀쩡했습니다. 추적에 조합이 그대로 찍힙니다.
+
+```
+text_input_preedit_string text "\xe3\x85\x87"   (ㅇ)
+post_ime_update comp_str L"\3147"
+```
+
+막힌 곳은 키보드 그룹이었습니다. 한 번의 재현에서 이렇게 나옵니다.
+
+```
+keyboard_handle_keymap       4     전환마다 온다
+keyboard_handle_modifiers    1     그룹을 고쳐줄 유일한 길
+activate_keyboard_hkl        2     둘 다 text_input_enter에 붙음
+```
+
+`keyboard_handle_keymap`은 끝에서 `set_current_xkb_group(0)`을 부릅니다.
+새로 만든 `xkb_state`가 그룹 0이니 그 자체는 맞습니다. 올바른 그룹은
+뒤따르는 `modifiers`가 알려줍니다.
+
+그런데 `keyboard_handle_modifiers`가 그 전에 돌아가고 있었습니다.
+
+```c
+if (!wayland_keyboard_get_focused_hwnd()) return;
+```
+
+그룹은 창의 속성이 아니라 seat의 속성입니다. 우리 창이 키보드를 들고
+있지 않은 사이에 온 그룹 변경이 버려지고, 남는 것은 키맵이 리셋한 0
+입니다. 입력 소스를 바꿀 때마다 키맵이 오므로 그 창이 늘 열려 있습니다.
+
+다시 클릭하면 되는 이유도 같은 자리입니다. 그건 포커스 변경이고,
+`text_input_enter`가 여기서 정한 값으로 레이아웃을 세웁니다.
+
+포커스가 무엇이든 그룹은 따라가고, 알려줄 창이 있을 때만 알려주게
+했습니다. 나중에 포커스를 얻는 창은 그때 듣습니다.
+
+
 ## 화면을 안 뺏고 시험하기
 
 포커스와 창 올리기를 건드리는 변경은 시험할 때마다 쓰던 화면을
