@@ -1,0 +1,6 @@
+* navigation
+** index|첫 화면
+** 설치|설치
+* 바깥
+** https://github.com/chaotic-ground/kakaotalk-on-wine|저장소
+** https://www.kakaocorp.com/page/service/service/KakaoTalk|공식 카카오톡

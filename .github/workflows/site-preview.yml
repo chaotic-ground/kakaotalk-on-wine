@@ -1,0 +1,97 @@
+---
+name: Site preview
+
+# PR마다 사이트를 구워 gh-pages의 pr-preview/pr-<N>/에 둔다. 리뷰어가
+# 렌더된 것을 보고, PR이 닫히면 치운다.
+#
+# 포크와 Dependabot은 건너뛴다. 읽기 전용 토큰이라 gh-pages에 밀 수 없고,
+# 미리보기는 실패만 남긴다. pull_request_target이 아니라 pull_request로
+# 도는 것도 같은 이유다. PR의 코드를 쓰기 권한 있는 토큰으로 돌리지
+# 않는다.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+    paths:
+      - 'site/**'
+      - '.github/workflows/site-preview.yml'
+
+permissions: {}
+
+concurrency:
+  group: site-preview-${{ github.event.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository
+      && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write  # gh-pages 브랜치에 민다
+      deployments: write  # PR에 미리보기를 배포로 보여준다
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - if: github.event.action != 'closed'
+        uses: chaotic-ground/wikven/actions/bake@79c58df9b0fd9a92143c3cd76e0e677f9de10d45  # v1.2.0
+        with:
+          source: site
+          output: dist
+
+      # comment: false - 미리보기는 코멘트가 아니라 아래의 배포로 보인다.
+      - uses: rossjrw/pr-preview-action@ffa7509e91a3ec8dfc2e5536c4d5c1acdf7a6de9  # v1.8.1
+        with:
+          source-dir: dist
+          preview-branch: gh-pages
+          umbrella-dir: pr-preview
+          comment: false
+
+      - name: Record the preview as a deployment
+        if: success() && github.event.action != 'closed'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const number = context.payload.number;
+            const url = `https://${context.repo.owner}.github.io/`
+              + `${context.repo.repo}/pr-preview/pr-${number}/`;
+            const deployment = await github.rest.repos.createDeployment({
+              ...context.repo,
+              ref: context.payload.pull_request.head.sha,
+              environment: 'preview',
+              transient_environment: true,
+              auto_merge: false,
+              required_contexts: [],
+              description: `Preview for PR #${number}`,
+            });
+            await github.rest.repos.createDeploymentStatus({
+              ...context.repo,
+              deployment_id: deployment.data.id,
+              state: 'success',
+              environment_url: url,
+              auto_inactive: false,
+              description: 'Preview is live',
+            });
+
+      - name: Mark it inactive on close
+        if: always() && github.event.action == 'closed'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const { data: deployments } = await github.rest.repos.listDeployments({
+              ...context.repo,
+              environment: 'preview',
+              ref: context.payload.pull_request.head.sha,
+            });
+            for (const deployment of deployments) {
+              await github.rest.repos.createDeploymentStatus({
+                ...context.repo,
+                deployment_id: deployment.id,
+                state: 'inactive',
+                description: 'Preview removed',
+              });
+            }

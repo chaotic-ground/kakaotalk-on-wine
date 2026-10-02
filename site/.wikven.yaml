@@ -1,0 +1,27 @@
+---
+# wikven으로 짓는 작은 소개 사이트. 두 페이지다.
+#
+# 문서는 README.md에 있고 여기는 그것을 대신하지 않는다. 여기는 저장소를
+# 모르는 사람이 "그래서 이게 뭔데"를 읽는 자리다.
+
+extensions:
+  # 설치 페이지의 명령어 블록이 쓴다.
+  - SyntaxHighlight_GeSHi
+
+skins:
+  - MonoBook
+
+config:
+  Sitename: 카카오톡 on Wine
+  # MonoBook으로 읽는다. 일부러 구식이다. 2004년 위키백과의 그것이고,
+  # 이 프로젝트가 하는 일과 어울린다. 윈도우 메신저를 리눅스에서 돌리는
+  # 일이다.
+  #
+  # wikven은 무엇을 적든 Vector도 같이 짓는다. 그래서 모든 페이지에
+  # 스킨 전환기가 있고, 구식이 싫은 사람은 거기서 바꾸면 된다.
+  DefaultSkin: monobook
+
+  # 문서마다 붙는 편집과 역사 링크가 GitHub으로 간다. 위키처럼 보이지만
+  # 고치는 곳은 저장소다.
+  WikvenEditUrl: https://github.com/chaotic-ground/kakaotalk-on-wine/edit/main/site/$1
+  WikvenHistoryUrl: https://github.com/chaotic-ground/kakaotalk-on-wine/commits/main/site/$1

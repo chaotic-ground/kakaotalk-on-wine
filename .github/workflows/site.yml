@@ -1,0 +1,51 @@
+---
+name: Site
+
+# site/를 wikven으로 구워 gh-pages에 올린다. 저장소를 모르는 사람이
+# "그래서 이게 뭔데"를 읽는 두 페이지짜리 사이트다. 문서는 README.md와
+# patches/README.md에 있고 이것이 그것을 대신하지 않는다.
+#
+# Wine도 flatpak도 여기서 만들지 않는다. 이 워크플로가 보는 것은 site/
+# 아래의 위키텍스트뿐이라 1분이면 끝난다.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/site.yml'
+  workflow_dispatch:
+
+permissions: {}
+
+# gh-pages로의 배포를 줄 세운다. 새 실행이 도는 것을 앞지른다.
+concurrency:
+  group: site
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write  # gh-pages 브랜치에 민다
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          # 역사를 전부 받는다. bake가 각 페이지의 날짜를 그 원본을 마지막
+          # 으로 건드린 커밋에서 읽는데, 얕은 체크아웃은 마지막 하나만 안다.
+          fetch-depth: 0
+
+      - uses: chaotic-ground/wikven/actions/bake@79c58df9b0fd9a92143c3cd76e0e677f9de10d45  # v1.2.0
+        with:
+          source: site
+          output: dist
+
+      # clean-exclude가 pr-preview/를 남긴다. 배포가 열려 있는 PR의
+      # 미리보기를 지우지 않게.
+      - uses: JamesIves/github-pages-deploy-action@fa24774553152dd7873cd16ebd8d959b010c5445  # v4.9.0
+        with:
+          branch: gh-pages
+          folder: dist
+          clean: true
+          clean-exclude: pr-preview
