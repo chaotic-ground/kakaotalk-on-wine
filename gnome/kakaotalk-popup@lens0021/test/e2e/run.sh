@@ -18,7 +18,17 @@ readonly DISPLAY_NAME=wayland-e2e-$$
 WORK=$(mktemp -d)
 readonly WORK
 
+# 떨어질 때 셸 로그를 찍는다. 이게 없으면 CI에서 고칠 수가 없다. 처음
+# 올렸을 때 셸이 컨테이너에서 즉시 죽었는데, 이유를 적은 파일을 정리가
+# 먼저 지웠다.
 cleanup() {
+  local rc=$?
+  if [[ $rc -ne 0 ]]; then
+    echo "--- gnome-shell 로그 ---" >&2
+    cat "$WORK/shell.log" >&2 2>/dev/null || echo "(없음)" >&2
+    echo "--- 가짜 앱 로그 ---" >&2
+    cat "$WORK/fake.log" >&2 2>/dev/null || echo "(없음)" >&2
+  fi
   [[ -n ${FAKE_PID:-} ]] && kill "$FAKE_PID" 2>/dev/null
   [[ -n ${SHELL_PID:-} ]] && kill "$SHELL_PID" 2>/dev/null
   [[ -n ${DBUS_PID:-} ]] && kill "$DBUS_PID" 2>/dev/null
