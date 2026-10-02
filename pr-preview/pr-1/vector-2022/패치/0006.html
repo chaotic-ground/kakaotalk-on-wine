@@ -27,9 +27,9 @@ RLSTATE={"site.styles":"ready","user.styles":"ready","user":"ready","user.option
 <meta property="og:site_name" content="카카오톡 on Wine">
 <meta property="og:url" content="https://chaotic-ground.github.io/kakaotalk-on-wine/%ED%8C%A8%EC%B9%98/0006.html">
 <meta property="og:description" content="GNOME 스크린샷이 안 붙음">
-<meta property="article:modified_time" content="2026-10-02T12:42:44Z">
-<meta property="article:published_time" content="2026-10-02T12:42:44Z">
-<script type="application/ld+json">{"@context":"http:\/\/schema.org","@type":"Article","name":"0006 \ud074\ub9bd\ubcf4\ub4dc\uc758 PNG \ub514\ucf54\ub529 - \uce74\uce74\uc624\ud1a1 on Wine","headline":"0006 \ud074\ub9bd\ubcf4\ub4dc\uc758 PNG \ub514\ucf54\ub529 - \uce74\uce74\uc624\ud1a1 on Wine","mainEntityOfPage":"0006 \ud074\ub9bd\ubcf4\ub4dc\uc758 PNG \ub514\ucf54\ub529","identifier":"https:\/\/chaotic-ground.github.io\/kakaotalk-on-wine\/%ED%8C%A8%EC%B9%98\/0006.html","url":"https:\/\/chaotic-ground.github.io\/kakaotalk-on-wine\/%ED%8C%A8%EC%B9%98\/0006.html","description":"GNOME \uc2a4\ud06c\ub9b0\uc0f7\uc774 \uc548 \ubd99\uc74c","dateModified":"2026-10-02T12:42:44Z","datePublished":"2026-10-02T12:42:44Z","image":[],"author":{"@type":"Organization","name":"\uce74\uce74\uc624\ud1a1 on Wine","url":"https:\/\/chaotic-ground.github.io","logo":[]},"publisher":{"@type":"Organization","name":"\uce74\uce74\uc624\ud1a1 on Wine","url":"https:\/\/chaotic-ground.github.io","logo":[]},"potentialAction":{"@type":"SearchAction","target":"#","query-input":"required name=search_term"}}</script>
+<meta property="article:modified_time" content="2026-10-02T12:47:07Z">
+<meta property="article:published_time" content="2026-10-02T12:47:07Z">
+<script type="application/ld+json">{"@context":"http:\/\/schema.org","@type":"Article","name":"0006 \ud074\ub9bd\ubcf4\ub4dc\uc758 PNG \ub514\ucf54\ub529 - \uce74\uce74\uc624\ud1a1 on Wine","headline":"0006 \ud074\ub9bd\ubcf4\ub4dc\uc758 PNG \ub514\ucf54\ub529 - \uce74\uce74\uc624\ud1a1 on Wine","mainEntityOfPage":"0006 \ud074\ub9bd\ubcf4\ub4dc\uc758 PNG \ub514\ucf54\ub529","identifier":"https:\/\/chaotic-ground.github.io\/kakaotalk-on-wine\/%ED%8C%A8%EC%B9%98\/0006.html","url":"https:\/\/chaotic-ground.github.io\/kakaotalk-on-wine\/%ED%8C%A8%EC%B9%98\/0006.html","description":"GNOME \uc2a4\ud06c\ub9b0\uc0f7\uc774 \uc548 \ubd99\uc74c","dateModified":"2026-10-02T12:47:07Z","datePublished":"2026-10-02T12:47:07Z","image":[],"author":{"@type":"Organization","name":"\uce74\uce74\uc624\ud1a1 on Wine","url":"https:\/\/chaotic-ground.github.io","logo":[]},"publisher":{"@type":"Organization","name":"\uce74\uce74\uc624\ud1a1 on Wine","url":"https:\/\/chaotic-ground.github.io","logo":[]},"potentialAction":{"@type":"SearchAction","target":"#","query-input":"required name=search_term"}}</script>
 </head>
 <body class="skin--responsive skin-vector skin-vector-search-vue mediawiki ltr sitedir-ltr mw-hide-empty-elt ns-0 ns-subject mw-editable page-패치_0006 rootpage-패치_0006 skin-vector-2022 action-view">
 <div id="mw-aria-live-region" class="mw-aria-live-region" aria-live="polite"></div><a class="mw-jump-link" href="#bodyContent">Jump to content</a>
@@ -275,16 +275,16 @@ RLSTATE={"site.styles":"ready","user.styles":"ready","user":"ready","user.option
 				<div class="vector-toc-text">Beginning</div>
 			</a>
 		</li>
-		<li id="toc-알아둘_결정_셋"
+		<li id="toc-결정한_것들"
 		class="vector-toc-list-item vector-toc-level-1 vector-toc-list-item-expanded">
-		<a class="vector-toc-link" href="#알아둘_결정_셋">
+		<a class="vector-toc-link" href="#결정한_것들">
 			<div class="vector-toc-text">
 				<span class="vector-toc-numb">1</span>
-				<span>알아둘 결정 셋</span>
+				<span>결정한 것들</span>
 			</div>
 		</a>
 		
-		<ul id="toc-알아둘_결정_셋-sublist" class="vector-toc-list">
+		<ul id="toc-결정한_것들-sublist" class="vector-toc-list">
 		</ul>
 	</li>
 	<li id="toc-업스트림에_못_내는_이유"
@@ -522,12 +522,11 @@ RLSTATE={"site.styles":"ready","user.styles":"ready","user":"ready","user.option
 <p class="mw-empty-elt"></p><p><a href="../패치/0003.html" title="패치/0003">0003</a>이 다루는 것은 Firefox와 GTK가 내놓는 것까지이고,
 <code>image/png</code> 하나만 내놓는 GNOME 스크린샷은 여전히 붙지
 않았습니다.
-</p><p>디코딩을 드라이버에서 하는 것은 썩 내키는 자리라서가 아니라 더 나은
-자리가 없기 때문입니다. <code>CF_DIB</code>을 <code>CF_BITMAP</code>으로
-바꾸는 포맷 합성은 <b>서버</b>에 있으면서 내장 포맷 ID만 아는데, "PNG"는
+</p><p>디코딩을 드라이버에서 하는 것은 더 나은 자리가 없기 때문입니다.
+<code>CF_DIB</code>을 <code>CF_BITMAP</code>으로 바꾸는 포맷 합성은 <b>서버</b>에 있으면서 내장 포맷 ID만 아는데, "PNG"는
 실행 중에 등록되는 포맷이라 애초에 거기 들어갈 수가 없습니다.
 </p>
-<div class="mw-heading mw-heading2"><h2 id="알아둘_결정_셋"><span id=".EC.95.8C.EC.95.84.EB.91.98_.EA.B2.B0.EC.A0.95_.EC.85.8B"></span>알아둘 결정 셋</h2></div>
+<div class="mw-heading mw-heading2"><h2 id="결정한_것들"><span id=".EA.B2.B0.EC.A0.95.ED.95.9C_.EA.B2.83.EB.93.A4"></span>결정한 것들</h2></div>
 <dl><dt>알파는 흰색 위에 합성합니다</dt>
 <dd>DIB에는 모두가 합의한 알파 채널이 없습니다. 32비트의 최상위 바이트는 예약된 자리이고 앱마다 해석이 달라서, 그대로 두면 모서리가 둥근 스크린샷이 검은 배경 위에 붙어 망가져 보입니다. 그런 화면을 보고 클립보드를 의심하기란 쉽지 않습니다.</dd>
 <dt><code>image/png</code>이 <code>CF_DIB</code>이 됩니다</dt>
@@ -551,7 +550,7 @@ RLSTATE={"site.styles":"ready","user.styles":"ready","user":"ready","user.option
 			
 <footer id="footer" class="mw-footer" >
 	<ul id="footer-info">
-	<li id="footer-info-lastmod"> This page was last edited on 2 October 2026, at 12:42.</li>
+	<li id="footer-info-lastmod"> This page was last edited on 2 October 2026, at 12:47.</li>
 </ul>
 
 	<ul id="footer-places">
