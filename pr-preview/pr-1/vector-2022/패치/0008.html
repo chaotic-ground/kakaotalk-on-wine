@@ -4,16 +4,17 @@
 <meta charset="UTF-8">
 <title>0008 입력기를 바꾸면 키보드 그룹이 0으로 남음 - 카카오톡 on Wine</title>
 <script>(function(){var className="client-js vector-feature-language-in-header-enabled vector-feature-language-in-main-menu-disabled vector-feature-language-in-main-page-header-disabled vector-feature-page-tools-pinned-disabled vector-feature-toc-pinned-clientpref-1 vector-feature-main-menu-pinned-disabled vector-feature-limited-width-clientpref-1 vector-feature-limited-width-content-enabled vector-feature-custom-font-size-clientpref-0 vector-feature-appearance-pinned-clientpref-1 skin-theme-clientpref-day vector-sticky-header-enabled vector-toc-not-available skin-theme-clientpref-thumb-standard";var cookie=document.cookie.match(/(?:^|; )my_wikimwclientpreferences=([^;]+)/);if(cookie){cookie[1].split('%2C').forEach(function(pref){className=className.replace(new RegExp('(^| )'+pref.replace(/-clientpref-\w+$|[^\w-]+/g,'')+'-clientpref-\\w+( |$)'),'$1'+pref+'$2');});}document.documentElement.className=className;}());RLCONF={"wgBreakFrames":false,"wgSeparatorTransformTable":["",""],"wgDigitTransformTable":["",""],"wgDefaultDateFormat":"dmy","wgMonthNames":["","January","February","March","April","May","June","July","August","September","October","November","December"],"wgRequestId":"","wgCanonicalNamespace":"","wgCanonicalSpecialPageName":false,"wgNamespaceNumber":0,"wgPageName":"패치/0008","wgTitle":"패치/0008","wgCurRevisionId":0,"wgRevisionId":0,"wgArticleId":0,"wgIsArticle":true,"wgIsRedirect":false,"wgAction":"view","wgUserName":null,"wgUserGroups":["*"],"wgCategories":["패치"],"wgPageViewLanguage":"en","wgPageContentLanguage":"en","wgPageContentModel":"wikitext","wgRelevantPageName":"패치/0008","wgRelevantArticleId":0,"wgIsProbablyEditable":true,"wgRelevantPageIsProbablyEditable":true,"wgRestrictionEdit":[],"wgRestrictionMove":[]};
-RLSTATE={"site.styles":"ready","user.styles":"ready","user":"ready","user.options":"loading","ext.pygments":"ready","skins.vector.search.codex.styles":"ready","skins.vector.styles":"ready","skins.vector.icons":"ready","ext.Wikven.styles":"ready"};RLPAGEMODULES=[];</script>
+RLSTATE={"site.styles":"ready","user.styles":"ready","user":"ready","user.options":"loading","ext.PortableInfobox.styles":"ready","ext.pygments":"ready","skins.vector.search.codex.styles":"ready","skins.vector.styles":"ready","skins.vector.icons":"ready","ext.Wikven.styles":"ready"};RLPAGEMODULES=[];</script>
 <script>(RLQ=window.RLQ||[]).push(function(){mw.loader.impl(function(){return["user.options@12s5i",function($,jQuery,require,module){mw.user.tokens.set({"patrolToken":"+\\","watchToken":"+\\","csrfToken":"+\\"});
 }];});});</script>
 
-<script src="../assets/startup-static.js"></script><script src="../assets/modules-static.js"></script><script>mw.loader.load(["ext.pygments.view","site","mediawiki.page.ready","skins.vector.js","ext.Wikven.pinnableState","ext.Wikven.appearance","ext.Wikven.vectorSkins"]);</script>
+<script src="../assets/startup-static.js"></script><script src="../assets/modules-static.js"></script><script>mw.loader.load(["ext.PortableInfobox.scripts","ext.pygments.view","site","mediawiki.page.ready","skins.vector.js","ext.Wikven.pinnableState","ext.Wikven.appearance","ext.Wikven.vectorSkins"]);</script>
 <meta name="generator" content="MediaWiki 1.46.0">
 <meta name="robots" content="noindex,follow,max-image-preview:standard">
 <meta name="format-detection" content="telephone=no">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, minimum-scale=0.25, maximum-scale=5.0">
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%226%22%20fill%3D%22%23157f93%22%2F%3E%3Ctext%20x%3D%2216%22%20y%3D%2223%22%20font-family%3D%22sans-serif%22%20font-size%3D%2220%22%20font-weight%3D%22700%22%20fill%3D%22%23ffffff%22%20text-anchor%3D%22middle%22%3EW%3C%2Ftext%3E%3C%2Fsvg%3E">
+<link rel="stylesheet" href="../assets/ext.PortableInfobox.styles.css">
 <link rel="stylesheet" href="../assets/ext.pygments.css">
 <link rel="stylesheet" href="../assets/skins.vector.search.codex.styles.css">
 <link rel="stylesheet" href="../assets/skins.vector.styles.css">
@@ -423,31 +424,21 @@ RLSTATE={"site.styles":"ready","user.styles":"ready","user":"ready","user.option
 					<div id="contentSub"><div id="mw-content-subtitle"></div></div>
 					
 					
-					<div id="mw-content-text" class="mw-body-content"><div class="mw-content-ltr mw-parser-output" lang="en" dir="ltr"><table class="wikitable" style="float:right; clear:right; margin:0 0 1em 1em; font-size:90%; max-width:24em">
-<tbody><tr>
-<th colspan="2" style="text-align:center">패치 0008
-</th></tr>
-<tr>
-<th style="text-align:left">증상
-</th>
-<td>입력기를 바꾼 뒤 레이아웃이 안 따라옴
-</td></tr>
-<tr>
-<th style="text-align:left">건드리는 곳
-</th>
-<td><code>winewayland.drv/wayland_keyboard.c</code>
-</td></tr>
-<tr>
-<th style="text-align:left">업스트림
-</th>
-<td>안 냈습니다
-</td></tr>
-<tr>
-<th style="text-align:left">파일
-</th>
-<td><a rel="nofollow" class="external text" href="https://github.com/chaotic-ground/kakaotalk-on-wine/blob/main/patches/0008-winewayland-Keep-the-keyboard-group-when-nothing-is-.patch">0008-winewayland-Keep-the-keyboard-group-when-nothing-is-.patch</a>
-</td></tr></tbody></table>
-<p>드보락으로 입력창을 쓰다가 글벗(ibus 한글 입력기)으로 바꾸면 한글이
+					<div id="mw-content-text" class="mw-body-content"><div class="mw-content-ltr mw-parser-output" lang="en" dir="ltr"><p class="mw-empty-elt"></p><aside class="portable-infobox noexcerpt searchaux pi-background pi-theme-default pi-layout-default"><h2 class="pi-item pi-item-spacing pi-title" data-source="번호">패치 0008</h2><div class="pi-item pi-data pi-item-spacing pi-border-color" data-source="증상">
+		<h3 class="pi-data-label pi-secondary-font">증상</h3>
+	<div class="pi-data-value pi-font">입력기를 바꾼 뒤 레이아웃이 안 따라옴</div>
+</div><div class="pi-item pi-data pi-item-spacing pi-border-color" data-source="파일">
+		<h3 class="pi-data-label pi-secondary-font">건드리는 곳</h3>
+	<div class="pi-data-value pi-font"><code>winewayland.drv/wayland_keyboard.c</code></div>
+</div><div class="pi-item pi-data pi-item-spacing pi-border-color" data-source="업스트림">
+		<h3 class="pi-data-label pi-secondary-font">업스트림</h3>
+	<div class="pi-data-value pi-font">안 냈습니다</div>
+</div><div class="pi-item pi-data pi-item-spacing pi-border-color" data-source="패치">
+		<h3 class="pi-data-label pi-secondary-font">파일</h3>
+	<div class="pi-data-value pi-font"><a rel="nofollow" class="external text" href="https://github.com/chaotic-ground/kakaotalk-on-wine/blob/main/patches/0008-winewayland-Keep-the-keyboard-group-when-nothing-is-.patch">0008-winewayland-Keep-the-keyboard-group-when-nothing-is-.patch</a></div>
+</div></aside>
+
+<p class="mw-empty-elt"></p><p>드보락으로 입력창을 쓰다가 글벗(ibus 한글 입력기)으로 바꾸면 한글이
 안 들어갔습니다. 다른 곳을 클릭했다가 입력창을 다시 누르면 그제야
 됐습니다.
 </p><p>Wayland 단은 멀쩡했습니다. 추적에 조합이 그대로 찍힙니다.

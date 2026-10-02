@@ -3,17 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <title>0009 조합이 자기 IME UI 창 때문에 취소됨 - 카카오톡 on Wine</title>
-<script>document.documentElement.className="client-js skin-theme-clientpref-thumb-standard";RLCONF={"wgBreakFrames":false,"wgSeparatorTransformTable":["",""],"wgDigitTransformTable":["",""],"wgDefaultDateFormat":"dmy","wgMonthNames":["","January","February","March","April","May","June","July","August","September","October","November","December"],"wgRequestId":"","wgCanonicalNamespace":"","wgCanonicalSpecialPageName":false,"wgNamespaceNumber":0,"wgPageName":"패치/0009","wgTitle":"패치/0009","wgCurRevisionId":0,"wgRevisionId":0,"wgArticleId":0,"wgIsArticle":true,"wgIsRedirect":false,"wgAction":"view","wgUserName":null,"wgUserGroups":["*"],"wgCategories":["패치"],"wgPageViewLanguage":"en","wgPageContentLanguage":"en","wgPageContentModel":"wikitext","wgRelevantPageName":"패치/0009","wgRelevantArticleId":0,"wgIsProbablyEditable":true,"wgRelevantPageIsProbablyEditable":true,"wgRestrictionEdit":[],"wgRestrictionMove":[]};RLSTATE={"site.styles":"ready","user.styles":"ready","user":"ready","user.options":"loading","ext.pygments":"ready","skins.monobook.styles":"ready","ext.Wikven.styles":"ready"};
+<script>document.documentElement.className="client-js skin-theme-clientpref-thumb-standard";RLCONF={"wgBreakFrames":false,"wgSeparatorTransformTable":["",""],"wgDigitTransformTable":["",""],"wgDefaultDateFormat":"dmy","wgMonthNames":["","January","February","March","April","May","June","July","August","September","October","November","December"],"wgRequestId":"","wgCanonicalNamespace":"","wgCanonicalSpecialPageName":false,"wgNamespaceNumber":0,"wgPageName":"패치/0009","wgTitle":"패치/0009","wgCurRevisionId":0,"wgRevisionId":0,"wgArticleId":0,"wgIsArticle":true,"wgIsRedirect":false,"wgAction":"view","wgUserName":null,"wgUserGroups":["*"],"wgCategories":["패치"],"wgPageViewLanguage":"en","wgPageContentLanguage":"en","wgPageContentModel":"wikitext","wgRelevantPageName":"패치/0009","wgRelevantArticleId":0,"wgIsProbablyEditable":true,"wgRelevantPageIsProbablyEditable":true,"wgRestrictionEdit":[],"wgRestrictionMove":[]};RLSTATE={"site.styles":"ready","user.styles":"ready","user":"ready","user.options":"loading","ext.PortableInfobox.styles":"ready","ext.pygments":"ready","skins.monobook.styles":"ready","ext.Wikven.styles":"ready"};
 RLPAGEMODULES=[];</script>
 <script>(RLQ=window.RLQ||[]).push(function(){mw.loader.impl(function(){return["user.options@12s5i",function($,jQuery,require,module){mw.user.tokens.set({"patrolToken":"+\\","watchToken":"+\\","csrfToken":"+\\"});
 }];});});</script>
 
-<script src="../assets/startup-static.js"></script><script src="../assets/modules-static.js"></script><script>mw.loader.load(["ext.pygments.view","site","mediawiki.page.ready","skins.monobook.scripts","ext.Wikven.pinnableState","ext.Wikven.appearance"]);</script>
+<script src="../assets/startup-static.js"></script><script src="../assets/modules-static.js"></script><script>mw.loader.load(["ext.PortableInfobox.scripts","ext.pygments.view","site","mediawiki.page.ready","skins.monobook.scripts","ext.Wikven.pinnableState","ext.Wikven.appearance"]);</script>
 <meta name="generator" content="MediaWiki 1.46.0">
 <meta name="robots" content="max-image-preview:standard">
 <meta name="format-detection" content="telephone=no">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, minimum-scale=0.25, maximum-scale=5.0">
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%226%22%20fill%3D%22%23157f93%22%2F%3E%3Ctext%20x%3D%2216%22%20y%3D%2223%22%20font-family%3D%22sans-serif%22%20font-size%3D%2220%22%20font-weight%3D%22700%22%20fill%3D%22%23ffffff%22%20text-anchor%3D%22middle%22%3EW%3C%2Ftext%3E%3C%2Fsvg%3E">
+<link rel="stylesheet" href="../assets/ext.PortableInfobox.styles.css">
 <link rel="stylesheet" href="../assets/ext.pygments.css">
 <link rel="stylesheet" href="../assets/skins.monobook.styles.css">
 <link rel="stylesheet" href="../assets/ext.Wikven.styles.css">
@@ -32,31 +33,21 @@ RLPAGEMODULES=[];</script>
 				<div id="contentSub" ><div id="mw-content-subtitle"></div></div>
 				
 				<div id="jump-to-nav"></div><a href="#column-one" class="mw-jump-link">Jump to navigation</a><a href="#searchInput" class="mw-jump-link">Jump to search</a>
-				<div id="mw-content-text" class="mw-body-content"><div class="mw-content-ltr mw-parser-output" lang="en" dir="ltr"><table class="wikitable" style="float:right; clear:right; margin:0 0 1em 1em; font-size:90%; max-width:24em">
-<tbody><tr>
-<th colspan="2" style="text-align:center">패치 0009
-</th></tr>
-<tr>
-<th style="text-align:left">증상
-</th>
-<td>조합하던 글자가 오는 족족 취소됨
-</td></tr>
-<tr>
-<th style="text-align:left">건드리는 곳
-</th>
-<td><code>winewayland.drv/window.c</code>
-</td></tr>
-<tr>
-<th style="text-align:left">업스트림
-</th>
-<td>안 냈습니다
-</td></tr>
-<tr>
-<th style="text-align:left">파일
-</th>
-<td><a rel="nofollow" class="external text" href="https://github.com/chaotic-ground/kakaotalk-on-wine/blob/main/patches/0009-winewayland-Do-not-give-a-toplevel-to-a-window-with-.patch">0009-winewayland-Do-not-give-a-toplevel-to-a-window-with-.patch</a>
-</td></tr></tbody></table>
-<p><a href="../패치/0008.html" title="패치/0008">0008</a>과 같은 증상을 쫓다가 나온 것입니다. 조합이 오는 족족
+				<div id="mw-content-text" class="mw-body-content"><div class="mw-content-ltr mw-parser-output" lang="en" dir="ltr"><p class="mw-empty-elt"></p><aside class="portable-infobox noexcerpt searchaux pi-background pi-theme-default pi-layout-default"><h2 class="pi-item pi-item-spacing pi-title" data-source="번호">패치 0009</h2><div class="pi-item pi-data pi-item-spacing pi-border-color" data-source="증상">
+		<h3 class="pi-data-label pi-secondary-font">증상</h3>
+	<div class="pi-data-value pi-font">조합하던 글자가 오는 족족 취소됨</div>
+</div><div class="pi-item pi-data pi-item-spacing pi-border-color" data-source="파일">
+		<h3 class="pi-data-label pi-secondary-font">건드리는 곳</h3>
+	<div class="pi-data-value pi-font"><code>winewayland.drv/window.c</code></div>
+</div><div class="pi-item pi-data pi-item-spacing pi-border-color" data-source="업스트림">
+		<h3 class="pi-data-label pi-secondary-font">업스트림</h3>
+	<div class="pi-data-value pi-font">안 냈습니다</div>
+</div><div class="pi-item pi-data pi-item-spacing pi-border-color" data-source="패치">
+		<h3 class="pi-data-label pi-secondary-font">파일</h3>
+	<div class="pi-data-value pi-font"><a rel="nofollow" class="external text" href="https://github.com/chaotic-ground/kakaotalk-on-wine/blob/main/patches/0009-winewayland-Do-not-give-a-toplevel-to-a-window-with-.patch">0009-winewayland-Do-not-give-a-toplevel-to-a-window-with-.patch</a></div>
+</div></aside>
+
+<p class="mw-empty-elt"></p><p><a href="../패치/0008.html" title="패치/0008">0008</a>과 같은 증상을 쫓다가 나온 것입니다. 조합이 오는 족족
 취소되고 있었습니다.
 </p>
 <div class="mw-highlight mw-highlight-lang-text mw-content-ltr" dir="ltr"><pre><span></span>preedit &quot;ㅇ&quot; → post_ime_update
