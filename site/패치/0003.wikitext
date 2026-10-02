@@ -3,20 +3,20 @@
 |번호=0003
 |증상=브라우저에서 복사한 그림이 안 붙음
 |파일=<code>winewayland.drv/wayland_data_device.c</code>
-|업스트림=안 냈습니다
+|업스트림=안 냈다
 |패치=0003-winewayland-Paste-a-picture.patch
 }}
 컴포지터가 내놓는 것은 mime 타입이고 윈도우 앱이 찾는 것은
 <code>CF_DIB</code>인데, Wayland 드라이버의 클립보드 표에
-<code>CF_DIB</code> 항목이 아예 없었습니다. <code>image/png</code>,
+<code>CF_DIB</code> 항목이 아예 없었다. <code>image/png</code>,
 <code>image/jpeg</code>, <code>image/gif</code>는 "PNG", "JFIF", "GIF"
-라는 이름의 등록 포맷으로 넘어가고, 그 이름을 찾는 앱은 없습니다.
+라는 이름의 등록 포맷으로 넘어가고, 그 이름을 찾는 앱은 없다.
 
 X11 드라이버는 <code>image/bmp</code> → <code>CF_DIB</code>을
-오래전부터 갖고 있었습니다. 그걸 옮겨 심었습니다. Firefox와 GTK가
+오래전부터 갖고 있었다. 그걸 옮겨 심었다. Firefox와 GTK가
 <code>image/png</code> 옆에 <code>image/bmp</code>도 같이 내놓기 때문에
-항목 하나로 충분합니다. 다른 출처를 가정하기 전에
-<code>wl-paste --list-types</code>로 확인하세요.
+항목 하나로 충분하다. 다른 출처를 가정하기 전에
+<code>wl-paste --list-types</code>로 확인하라.
 
 <code>image/png</code>은 디코더가 필요해서 [[패치/0006|0006]]에서
-다룹니다.
+다룬다.
