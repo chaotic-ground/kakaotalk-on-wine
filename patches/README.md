@@ -281,6 +281,36 @@ if (!wayland_keyboard_get_focused_hwnd()) return;
 했습니다. 나중에 포커스를 얻는 창은 그때 듣습니다.
 
 
+## 0009 조합이 자기 UI 창 때문에 취소됨
+
+0008과 같은 증상을 쫓다가 나온 것입니다. 조합이 오는 족족 취소되고
+있었습니다.
+
+```
+preedit "ㅇ" → post_ime_update
+text_input_leave                  ← 조합 취소
+text_input_enter hwnd 0x1e00dc    ← IME UI 창이 포커스를 가져감
+text_input_leave
+text_input_enter hwnd 0x700e8     ← 돌아옴
+```
+
+`0x1e00dc`는 Wine 자신의 IME UI 창입니다. imm32가 `CreateWindowExW(
+WS_EX_TOOLWINDOW, ..., 0, 0, 1, 1)`로 만듭니다. 1x1입니다.
+
+그 창이 **0005 때문에** 독립 toplevel을 받고 있었습니다. 0005는 주인이
+화면에 없는 owned 창에 자기 표면을 주는데, 트레이 메뉴를 보이게 하려던
+것이었습니다. IME UI 창도 그 조건에 맞아서 toplevel이 되고, 컴포지터가
+거기 포커스를 주고, 앱이 조합하던 text input에 `leave`가 가서 글자가
+죽습니다. 입력기가 만든 글자를 그 입력기의 UI 창이 지우는 셈입니다.
+
+그릴 것이 있는 창만 올립니다. toplevel은 컴포지터에게 키보드를
+달라는 것이고, 넓이가 없는 창은 그걸로 읽을 것이 없습니다.
+
+**이것으로도 신고된 증상은 안 고쳐집니다.** 포커스 튀는 것은 추적에서
+사라졌지만 한글은 여전히 안 들어갑니다. 고친 것은 진짜 결함이고,
+증상의 원인은 아직 모릅니다.
+
+
 ## 화면을 안 뺏고 시험하기
 
 포커스와 창 올리기를 건드리는 변경은 시험할 때마다 쓰던 화면을

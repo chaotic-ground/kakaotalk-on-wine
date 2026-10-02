@@ -1,0 +1,61 @@
+From f09e60622c0f84e867cc2a5b6582a0fb30b5ad41 Mon Sep 17 00:00:00 2001
+From: lens0021 <lorentz0021@gmail.com>
+Date: Fri, 2 Oct 2026 17:45:15 +0900
+Subject: [PATCH] winewayland: Do not give a toplevel to a window with no area
+
+A window owned by a hidden one is promoted to a toplevel so that it is
+drawn at all. A toplevel asks the compositor for the keyboard, and a
+window with no area has nothing to read with it.
+
+imm32 creates its UI window 1x1. It was promoted here, the compositor
+focused it, and the text input the application was composing into was
+left. Every character the input method produced was cancelled by the
+focus change that its own UI window caused.
+
+Only promote a window that has something to show.
+---
+ dlls/winewayland.drv/window.c | 21 +++++++++++++++++++--
+ 1 file changed, 19 insertions(+), 2 deletions(-)
+
+diff --git a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
+index 3a1a5ee0..64593f65 100644
+--- a/dlls/winewayland.drv/window.c
++++ b/dlls/winewayland.drv/window.c
+@@ -172,6 +172,14 @@ static void reapply_cursor_clipping(void)
+     NtUserSetThreadDpiAwarenessContext(context);
+ }
+ 
++/* Whether the window is big enough to be worth a surface of its own. Wine
++ * creates placeholders at 1x1 that are never meant to be seen. */
++static BOOL wayland_win_data_has_area(struct wayland_win_data *data)
++{
++    RECT rect = data->rects.window;
++    return (rect.right - rect.left) > 1 && (rect.bottom - rect.top) > 1;
++}
++
+ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *data, struct wayland_surface *owner_surface)
+ {
+     struct wayland_surface *surface;
+@@ -190,8 +198,17 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
+      * subsurface of that is drawn nowhere. A window owned by a hidden one is
+      * an ordinary thing -- an app that hides to the tray and then puts up its
+      * tray menu owns it from a hidden window, and the menu simply never
+-     * appeared -- so give it a surface of its own instead. */
+-    else if (owner_surface && owner_surface->role != WAYLAND_SURFACE_ROLE_NONE)
++     * appeared -- so give it a surface of its own instead.
++     *
++     * Only one with something to show, though. A toplevel is asking the
++     * compositor for the keyboard, and a window with no area has nothing to
++     * read with it. The IME UI window is the one that showed this: imm32
++     * creates it 1x1, it was promoted here, the compositor focused it, and
++     * the text input the application was composing into was left. Every
++     * character the input method produced was cancelled by the focus change
++     * that its own UI window caused. */
++    else if (owner_surface && (owner_surface->role != WAYLAND_SURFACE_ROLE_NONE ||
++                               !wayland_win_data_has_area(data)))
+         role = WAYLAND_SURFACE_ROLE_SUBSURFACE;
+     else role = WAYLAND_SURFACE_ROLE_TOPLEVEL;
+ 
+-- 
+2.55.0
+
