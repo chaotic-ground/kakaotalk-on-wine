@@ -40,4 +40,4 @@ config:
   WikvenRepositories:
     DynamicPageList4:
       repository: https://github.com/Universal-Omega/DynamicPageList4.git
-      reference: d2e8e6caa1bc2468c83cf5087d2bbfd660484883
+      commit: d2e8e6caa1bc2468c83cf5087d2bbfd660484883
