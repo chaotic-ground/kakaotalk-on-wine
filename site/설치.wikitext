@@ -1,10 +1,9 @@
 {{DISPLAYTITLE:설치}}
-flatpak 하나입니다. root도 암호도 필요 없습니다.
+flatpak 하나와 GNOME 확장 하나입니다. root도 암호도 필요 없습니다.
 
 == 앱 ==
 <syntaxhighlight lang="sh" copy>
-curl -fL -o kakaotalk.flatpak \
-  https://github.com/chaotic-ground/kakaotalk-on-wine/releases/latest/download/kakaotalk.flatpak
+curl -fLO https://github.com/chaotic-ground/kakaotalk-on-wine/releases/latest/download/kakaotalk.flatpak
 flatpak install --user kakaotalk.flatpak
 </syntaxhighlight>
 
@@ -19,10 +18,14 @@ flatpak remote-add --user --if-not-exists flathub \
 첫 실행 때 카카오 CDN에서 설치 파일을 받아 프리픽스를 만듭니다. 몇 분
 걸리고, 그 다음부터는 바로 뜹니다.
 
+64비트 클라이언트를 씁니다. 카카오는 윈도우용을 셋 배포하는데, 검색으로
+나오는 <code>app-pc.kakaocdn.net/talk/win32/</code>는 32비트입니다.
+
 == GNOME 확장 ==
-GNOME에서 쓰신다면 같이 깔 것이 하나 더 있습니다. 트레이 메뉴, 알림
-팝업의 자리와 포커스, alt-tab 아이콘을 다루는 것이 이쪽입니다. 앱이
-닿을 수 없는 곳에 살기 때문에 손으로 깔아야 합니다.
+팝업의 자리와 포커스, 트레이를 대신하는 인디케이터, 카카오톡 자신의 메뉴
+열기를 맡습니다. 샌드박스 안의 앱은
+<code>~/.local/share/gnome-shell/extensions</code>에 아무것도 넣을 수
+없어서 손으로 깔아야 합니다.
 
 <syntaxhighlight lang="sh" copy>
 git clone https://github.com/chaotic-ground/kakaotalk-on-wine
@@ -31,10 +34,25 @@ cp -r kakaotalk-on-wine/gnome/kakaotalk-popup@lens0021 \
 gnome-extensions enable kakaotalk-popup@lens0021
 </syntaxhighlight>
 
-확장만 먼저 깔고 인디케이터에서 앱을 받을 수도 있습니다. 아무것도
-설치되어 있지 않을 때 인디케이터가 그 길을 안내합니다.
+확장을 먼저 깔아도 됩니다. 아무것도 설치되어 있지 않으면 인디케이터가
+flatpak 설치를 권합니다.
+
+설정은
+[https://github.com/chaotic-ground/kakaotalk-on-wine/blob/main/gnome/README.md
+gnome/README.md]에 있습니다.
 
 == 안 될 때 ==
-증상이 "없는 파일"이 아니라 엉뚱한 Wine 오류로 나타나는 경우가 있습니다.
-백신이 Wine의 PE 모듈을 격리한 것입니다. 저장소의
-<code>README.md</code>에 그 이야기가 있습니다.
+'''증상이 없는 파일이 아니라 엉뚱한 Wine 오류로 나타납니다.'''
+
+<syntaxhighlight lang="text">
+wine: Call from ... to unimplemented function user32.dll.CreateDialogParamW
+</syntaxhighlight>
+
+백신이 Wine의 PE 모듈을 격리한 것입니다. 한 번에 92개가 사라진 적이
+있습니다. flatpak 안의 Wine은 읽기 전용이라 안전하고, 프리픽스는
+<code>~/.var/app</code> 아래라 그렇지 않습니다.
+
+'''돌고 있는 앱에 <code>flatpak run</code>을 한 번 더 하지 마세요.''' 앱이
+죽습니다. 두 번째 클라이언트 이야기가 아니라, 다른 프로세스를 들여다보는
+wine 프로세스면 무엇이든 그렇습니다. 인스턴스마다 PID 네임스페이스가 따로
+라서입니다. 창을 되찾으려면 패널 인디케이터를 쓰세요.
