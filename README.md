@@ -11,9 +11,10 @@ Wayland가 부족한 부분을 메우는 GNOME 확장 하나로 이루어집니�
 
 | | |
 |---|---|
-| [`patches/README.md`](patches/README.md) | Wine 패치 열 개가 각각 무엇을 왜 고치는지, 빌드 방법, 화면 안 뺏고 시험하는 법 |
+| [`patches/README.md`](patches/README.md) | Wine 패치를 빌드하고 패키징하고, 화면 안 뺏고 시험하는 법 |
+| [`site/패치/`](site/%ED%8C%A8%EC%B9%98/) | 패치 열 개가 각각 무엇을 왜 고치는지. 한 쪽씩이고 첫 화면의 표는 여기서 만들어집니다 |
 | [`gnome/README.md`](gnome/README.md) | 확장이 하는 일, 설정 형식, 창을 들여다보는 법 |
-| [`site/`](site/) | 위 사이트의 원본. wikven으로 굽습니다 |
+| [`site/`](site/) | 위 사이트의 원본. wikven으로 굽습니다. 표는 DPL4가 만듭니다 |
 
 ## 알아둘 것
 

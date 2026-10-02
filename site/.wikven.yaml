@@ -1,12 +1,17 @@
 ---
-# wikven으로 짓는 작은 소개 사이트. 두 페이지다.
+# wikven으로 짓는 작은 소개 사이트.
 #
-# 문서는 README.md에 있고 여기는 그것을 대신하지 않는다. 여기는 저장소를
-# 모르는 사람이 "그래서 이게 뭔데"를 읽는 자리다.
+# 저장소를 모르는 사람이 "그래서 이게 뭔데"를 읽는 자리다. 저장소의
+# README.md는 고치는 사람이 보는 곳이고, 여기는 쓰는 사람이 보는 곳이다.
+#
+# 패치 열 개는 패치/0001처럼 한 쪽씩 따로 있고, 첫 화면의 "고친 것" 표는
+# 그 쪽들에서 DPL이 만든다. 패치를 더할 때 표는 건드리지 않는다.
 
 extensions:
   # 설치 페이지의 명령어 블록이 쓴다.
   - SyntaxHighlight_GeSHi
+  # 첫 화면의 "고친 것" 표가 쓴다.
+  - DynamicPageList4
 
 skins:
   - MonoBook
@@ -21,7 +26,18 @@ config:
   # 스킨 전환기가 있고, 구식이 싫은 사람은 거기서 바꾸면 된다.
   DefaultSkin: monobook
 
+  # 패치 쪽의 제목은 "패치/0007"이고 읽고 싶은 것은 무엇을 고쳤는지다.
+  # DISPLAYTITLE이 진짜 제목과 다른 것을 쓰려면 이게 꺼져 있어야 한다.
+  RestrictDisplayTitle: false
+
   # 문서마다 붙는 편집과 역사 링크가 GitHub으로 간다. 위키처럼 보이지만
   # 고치는 곳은 저장소다.
   WikvenEditUrl: https://github.com/chaotic-ground/kakaotalk-on-wine/edit/main/site/$1
   WikvenHistoryUrl: https://github.com/chaotic-ground/kakaotalk-on-wine/commits/main/site/$1
+
+  # DPL4는 묶음에 없어서 빌드할 때 받아온다. REL1_46 가지가 아직 없으므로
+  # main을 커밋으로 고정한다. MediaWiki를 올릴 때 여기가 먼저 깨진다.
+  WikvenRepositories:
+    DynamicPageList4:
+      repository: https://github.com/Universal-Omega/DynamicPageList4.git
+      reference: d2e8e6caa1bc2468c83cf5087d2bbfd660484883
