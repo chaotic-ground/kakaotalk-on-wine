@@ -1,0 +1,54 @@
+From 40df1c2c7e1f02b45de12556e7b97b1032b7adfb Mon Sep 17 00:00:00 2001
+From: lens0021 <lorentz0021@gmail.com>
+Date: Fri, 2 Oct 2026 17:56:53 +0900
+Subject: [PATCH] imm32: Bind a newly activated IME to the focused window
+
+Switching to an input method while a window already had the focus left
+nothing going in. Not the composed text, not the plain characters
+either: the window was left holding an input context that had never been
+activated for it, so what the IME produced reached nothing.
+
+IME_INTERNAL_ACTIVATE does this on a focus change, and that is why
+clicking the window made it work again. IME_INTERNAL_HKL_ACTIVATE only
+told the IME UI window, with WM_IME_SELECT, and said nothing to the
+window the user was typing into.
+
+A trace of the two cases differs in one thing. Failing: four
+WM_IME_SELECT and no WM_IME_SETCONTEXT. Working, after the click: four
+WM_IME_SETCONTEXT.
+---
+ dlls/imm32/imm.c | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/dlls/imm32/imm.c b/dlls/imm32/imm.c
+index b7aeb471..c62251be 100644
+--- a/dlls/imm32/imm.c
++++ b/dlls/imm32/imm.c
+@@ -3254,7 +3254,7 @@ static BOOL is_ime_ui_msg(UINT msg)
+ 
+ static LRESULT ime_internal_msg( WPARAM wparam, LPARAM lparam)
+ {
+-    HWND hwnd;
++    HWND hwnd, focus;
+     HIMC himc;
+ 
+     switch (wparam)
+@@ -3272,6 +3272,15 @@ static LRESULT ime_internal_msg( WPARAM wparam, LPARAM lparam)
+         break;
+     case IME_INTERNAL_HKL_ACTIVATE:
+         ImmEnumInputContext( 0, enum_activate_layout, 0 );
++        /* And bind the new IME to the window that already has the focus.
++         * Switching layout is not a focus change, so nothing else does it,
++         * and the window is left holding an input context that was never
++         * activated for it. What the IME composes then reaches nothing, and
++         * neither the composed text nor the plain characters appear. Clicking
++         * the window makes it work again because that is a focus change, and
++         * IME_INTERNAL_ACTIVATE does this. */
++        if ((focus = GetFocus()))
++            ImmSetActiveContext( focus, NtUserGetWindowInputContext( focus ), TRUE );
+         if (!(hwnd = get_ime_ui_window())) break;
+         SendMessageW( hwnd, WM_IME_SELECT, TRUE, lparam );
+         break;
+-- 
+2.55.0
+
