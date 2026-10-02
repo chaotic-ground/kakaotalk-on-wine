@@ -409,7 +409,7 @@ export default class KakaoTalkPopup {
                 console.log(`${TAG} focus -> ${this._describe(focused)}`);
             if (!this._config.keep_focus)
                 return;
-            if (!this._isPopupWindow(focused)) {
+            if (!this._isPopupWindow(focused) && !this._isStealingList(focused)) {
                 this._lastFocused = focused;
                 return;
             }
@@ -422,6 +422,41 @@ export default class KakaoTalkPopup {
                 return;
             previous.activate(global.get_current_time());
         });
+    }
+
+    // 알림이 오는 동안 목록 창이 포커스를 가져가는 경우. 조각이 아니라
+    // 진짜 창이라서 _isPopupWindow의 높이 기준에 안 걸린다.
+    //
+    // 단톡방에 메시지가 올 때마다 쓰던 창에서 포커스를 빼앗겼다. 앱이
+    // 알림마다 목록 창을 앞으로 내달라고 하고, Wine 패치 0007이 그것을
+    // 활성화 토큰으로 내보내면 mutter가 가끔 받아들인다. 윈도우에서는
+    // 일어나지 않는 일이다. 배경 프로세스의 SetForegroundWindow를 OS가
+    // 거절한다.
+    //
+    // 알림을 눌러서 대화방이 올라오는 것과 구별해야 한다. 기준은 어느
+    // 창이냐다. 알림이 올 때 포커스를 가져가는 것은 제목이 "카카오톡"인
+    // 목록 창이고, 알림을 눌렀을 때 올라오는 것은 방 이름이 붙은 대화방
+    // 창이다. 그래서 목록 창만 돌려보낸다.
+    //
+    // 그리고 알림이 오는 중일 때만. 사용자가 직접 목록을 누른 것까지
+    // 되돌리면 창을 열 방법이 없어진다.
+    //
+    // 앞의 포커스가 카카오톡이었으면 두지 않는다. 앱 안에서 창이 오가는
+    // 것은 앱의 일이고, 거기까지 끼어들면 알림을 눌렀을 때 열리는 대화방도
+    // 걷어차게 된다.
+    _isStealingList(window) {
+        if (window.get_title() !== '카카오톡')
+            return false;
+        if (!this._pids?.has(window.get_pid()))
+            return false;
+        if (!this._burst || GLib.get_monotonic_time() > this._burst.until)
+            return false;
+        const previous = this._lastFocused;
+        if (!previous || this._pids.has(previous.get_pid()))
+            return false;
+        if (this._config.log)
+            console.log(`${TAG} the list grabbed focus during a burst, giving it back`);
+        return true;
     }
 
     // POPUP_TITLE만으로 매칭하는 것은 부족했고 그 대가가 실제로 있었다.
@@ -1371,6 +1406,13 @@ export default class KakaoTalkPopup {
             `rect=${rect.x},${rect.y} ${rect.width}x${rect.height}`,
             `skip_taskbar=${window.is_skip_taskbar()}`,
             `override=${window.is_override_redirect()}`,
+            // 창을 올렸는데 아무 일도 안 일어나는 것을 쫓을 때 필요했다.
+            // 올리는 것과 보이는 것은 다른 질문이고, 앞의 것만 찍고 있었다.
+            `minimized=${window.minimized}`,
+            `hidden=${window.is_hidden()}`,
+            `showing=${window.showing_on_its_workspace()}`,
+            `ws=${window.get_workspace()?.index() ?? -1}`,
+            `monitor=${window.get_monitor()}`,
         ].join(' ');
     }
 }
