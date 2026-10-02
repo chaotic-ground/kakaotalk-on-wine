@@ -257,10 +257,6 @@ class TrayIndicator extends PanelMenu.Button {
 });
 
 // 트레이는 explorer.exe 창이다. 앱 자신의 창들은 아니다.
-function owned_tray_check(wmClass) {
-    return wmClass === 'explorer.exe';
-}
-
 export default class KakaoTalkPopup {
     constructor(extension) {
         this._extension = extension;
@@ -273,10 +269,10 @@ export default class KakaoTalkPopup {
         // 놓아줄 수 있도록. 남겨둔 핸들러는 그걸 만든 확장보다 오래 산다.
         // 이 파일을 두 번 켜면 트레이 하나가 닫힐 때 복구가 두 번 돌곤
         // 했다.
-        this._tray = [];
+        this._undo = [];
         this._hidden = new Set();
-        this._menuUntil = 0;
-        this._raisedUntil = 0;
+        // 확장이 일부러 한 일과 그 유효 시간. _intend를 보라.
+        this._intent = {};
         this._menuAt = null;
         this._menuPlaced = false;
         this._syncId = 0;
@@ -318,12 +314,13 @@ export default class KakaoTalkPopup {
             this._focusId = null;
         }
         this._lastFocused = null;
-        for (const {obj, id, show, dead} of this._tray ?? []) {
+        for (const {obj, id, show, dead} of this._undo ?? []) {
             if (dead)
                 continue;
             try {
-                obj.disconnect(id);
-                // 그리고 트레이 창을 화면에 돌려놓는다. 숨긴 채로 두면 이
+                if (id)
+                    obj.disconnect(id);
+                // 그리고 숨긴 창을 화면에 돌려놓는다. 숨긴 채로 두면 이
                 // 확장 말고는 앱에 닿을 방법이 없게 되는데, 세션에
                 // 넘겨주기에 좋은 상태가 아니다.
                 if (show)
@@ -332,8 +329,9 @@ export default class KakaoTalkPopup {
                 // 창이 우리보다 먼저 갔다. 놓아줄 것이 없다.
             }
         }
-        this._tray = null;
+        this._undo = null;
         this._hidden = null;
+        this._intent = null;
         if (this._syncId) {
             GLib.source_remove(this._syncId);
             this._syncId = 0;
@@ -363,7 +361,7 @@ export default class KakaoTalkPopup {
             // 이미 떠 있던 창은 _handle을 거치지 않았으므로, 사라질 때
             // 인디케이터에게 말해줄 방법이 없었다.
             window.connect('unmanaged', () => this._syncIndicatorSoon());
-            if (owned_tray_check(wmClass)) {
+            if (this._classify(window) === 'tray') {
                 this._watchTray(window);
                 // 이 코드가 읽힐 때 이미 떠 있던 창은 _onWindowCreated를
                 // 거치지 않았으므로, 타입 변경도 여기서 해준다.
@@ -449,15 +447,60 @@ export default class KakaoTalkPopup {
     // 앞의 포커스가 카카오톡이었으면 두지 않는다. 앱 안에서 창이 오가는
     // 것은 앱의 일이고, 거기까지 끼어들면 알림을 눌렀을 때 열리는 대화방도
     // 걷어차게 된다.
+    // 이 창이 무엇인가. 한 자리에서 답한다.
+    //
+    // 전에는 여섯 군데가 제각기 답했다. 어떤 곳은 제목만 보고, 어떤 곳은
+    // 제목과 높이를 보고, 어떤 곳은 폭까지 봤다. 같은 질문에 다른 답이
+    // 나오는 구조였고 실제로 그렇게 됐다. _hideChrome이 높이를 안 봐서
+    // 제목이 "카카오톡"인 목록 창을 띠로 보고 숨겼다. 창은 있는데 화면에
+    // 없는 상태가 되었고, 인디케이터가 그것을 올리고 있었다.
+    //
+    // 돌려주는 값:
+    //   tray     Wine이 띄우는 트레이 창. 우리 pid가 아니라 explorer의 것
+    //   shadow   알림의 그림자. 미끄러지는 프레임마다 다시 만들어진다
+    //   band     알림이 남기는 빈 띠. 제목이 목록 창과 똑같다
+    //   overlay  앱이 자기 창 위에 그리는 것. 스크롤할 때 뜨는 날짜 같은
+    //   piece    알림의 나머지 조각. 메시지와 답장 입력칸이 여기 있다
+    //   list     목록 창
+    //   chat     대화방 창
+    //   foreign  우리 것이 아님
+    //
+    // 크기 기준은 상수에 있고 그 숫자를 왜 그렇게 잡았는지도 거기 있다.
+    _classify(window) {
+        // pid를 묻지 않는다. 이 검사는 창이 만들어지는 시점에도 돌고,
+        // 그때는 아직 pid를 배우기 전일 수 있다. 클래스만으로 충분하다.
+        // Wine의 explorer는 이 프리픽스에 하나뿐이다.
+        if (window.get_wm_class() === 'explorer.exe')
+            return 'tray';
+        if (window.get_wm_class() !== 'kakaotalk.exe')
+            return 'foreign';
+        if (!this._pids?.has(window.get_pid()))
+            return 'foreign';
+
+        const title = window.get_title();
+        const rect = window.get_frame_rect();
+        const small = rect.height < MAIN_MIN_HEIGHT;
+
+        if (title === POPUP_TITLE)
+            return 'shadow';
+        if (title === '카카오톡')
+            return small ? 'band' : 'list';
+        if (title === '') {
+            if (rect.width >= OVERLAY_MIN_WIDTH && rect.width < OVERLAY_MAX_WIDTH &&
+                rect.height >= OVERLAY_MIN_HEIGHT && small)
+                return 'overlay';
+            return small ? 'piece' : 'unknown';
+        }
+        return small ? 'piece' : 'chat';
+    }
+
     _isStealingList(window) {
         // 우리가 방금 올린 창이면 아니다. 인디케이터를 눌러서 올라온 것과
         // 앱이 알림을 받고 혼자 올라온 것은 창도 같고 시점도 겹친다.
         // 구별하는 것은 우리가 올렸는지뿐이다.
-        if (GLib.get_monotonic_time() <= this._raisedUntil)
+        if (this._intends('raise'))
             return false;
-        if (window.get_title() !== '카카오톡')
-            return false;
-        if (!this._pids?.has(window.get_pid()))
+        if (this._classify(window) !== 'list')
             return false;
         if (!this._burst || GLib.get_monotonic_time() > this._burst.until)
             return false;
@@ -481,11 +524,7 @@ export default class KakaoTalkPopup {
     // _findMainWindow가 쓰는 것과 같은 높이 기준이고 이유도 같다. 여기서
     // 잰 알림 조각은 전부 높이 135 이하이고 메인 창은 431 이상이었다.
     _isPopupWindow(window) {
-        if (window.get_wm_class() !== 'kakaotalk.exe')
-            return false;
-        if (!this._pids?.has(window.get_pid()))
-            return false;
-        return window.get_frame_rect().height < MAIN_MIN_HEIGHT;
+        return ['shadow', 'band', 'overlay', 'piece'].includes(this._classify(window));
     }
 
     // 알림의 조각이 아니라 앱이 자기 창 위에 그리는 것. 폭으로 가른다.
@@ -494,11 +533,7 @@ export default class KakaoTalkPopup {
     _isOverlay(window) {
         if (!this._config.place_overlays)
             return false;
-        if (window.get_title() !== '')
-            return false;
-        const rect = window.get_frame_rect();
-        return rect.width >= OVERLAY_MIN_WIDTH && rect.width < OVERLAY_MAX_WIDTH &&
-               rect.height >= OVERLAY_MIN_HEIGHT && rect.height < MAIN_MIN_HEIGHT;
+        return this._classify(window) === 'overlay';
     }
 
     // 속한 창 위로 옮긴다. 컴포지터가 알아서 해주지 않는다. Wayland
@@ -537,8 +572,7 @@ export default class KakaoTalkPopup {
     _overlayParent() {
         const last = this._lastFocused;
         if (last && last.get_compositor_private() &&
-            last.get_wm_class() === 'kakaotalk.exe' &&
-            last.get_frame_rect().height >= MAIN_MIN_HEIGHT)
+            ['list', 'chat'].includes(this._classify(last)))
             return last;
         return this._findMainWindow();
     }
@@ -596,8 +630,10 @@ export default class KakaoTalkPopup {
     // explorer.exe가 그리며, 그중 메인 창이 아닌 유일한 것이다.
     _findTrayWindow() {
         for (const window of global.display.list_all_windows()) {
-            if (window.get_wm_class() !== 'explorer.exe')
+            if (this._classify(window) !== 'tray')
                 continue;
+            // 분류는 pid를 묻지 않는다. 창이 만들어지는 시점에도 돌기
+            // 때문이다. 여기서는 이미 아는 것만 찾으므로 한 번 더 묻는다.
             if (!this._pids.has(window.get_pid()))
                 continue;
             return window;
@@ -621,18 +657,11 @@ export default class KakaoTalkPopup {
     _findMainWindow() {
         let fallback = null;
         for (const window of global.display.list_all_windows()) {
-            if (window.get_wm_class() !== 'kakaotalk.exe')
-                continue;
-            if (!this._pids.has(window.get_pid()))
-                continue;
-            const title = window.get_title();
-            if (title === POPUP_TITLE || title === '')
-                continue;
-            if (window.get_frame_rect().height < MAIN_MIN_HEIGHT)
-                continue;
-            if (title === '카카오톡')
+            const kind = this._classify(window);
+            if (kind === 'list')
                 return window;
-            fallback ??= window;
+            if (kind === 'chat')
+                fallback ??= window;
         }
         return fallback;
     }
@@ -650,7 +679,7 @@ export default class KakaoTalkPopup {
             // 우리가 올리는 것이라고 표시해둔다. 아래의 되돌리기가 이것까지
             // 되돌리면 인디케이터가 아무 일도 안 하는 것이 된다. 실제로
             // 그랬다.
-            this._raisedUntil = GLib.get_monotonic_time() + RAISE_GRACE_US;
+            this._intend('raise', RAISE_GRACE_US);
             main.activate(global.get_current_time());
             return;
         }
@@ -819,7 +848,7 @@ export default class KakaoTalkPopup {
         // UTILITY다. 탭으로 옮겨갈 대상은 아니지만 알림도 아니다. mutter의
         // 재계산은 둘 다 작업 표시줄에서 빼는데, 그게 alt-tab과 오버뷰에서
         // 사라지게 하는 것이다.
-        if (this._config.hide_tray && window.get_wm_class() === 'explorer.exe') {
+        if (this._config.hide_tray && this._classify(window) === 'tray') {
             if (window.get_window_type() !== Meta.WindowType.UTILITY)
                 window.set_type(Meta.WindowType.UTILITY);
             // 그리고 다른 들어가는 길이 생기면 화면에서 아예 뺀다. 트레이는
@@ -882,9 +911,7 @@ export default class KakaoTalkPopup {
     // 액터만 숨겨져 있는 것만 되돌린다. 트레이 창은 우리가 일부러 숨기고
     // 있고 wm_class가 다르므로 여기 걸리지 않는다.
     _unhideWrongly(window) {
-        if (window.get_wm_class() !== 'kakaotalk.exe')
-            return;
-        if (this._isChrome(window))
+        if (!['list', 'chat'].includes(this._classify(window)))
             return;
         const actor = window.get_compositor_private();
         if (!actor || actor.visible)
@@ -904,7 +931,7 @@ export default class KakaoTalkPopup {
         }
         if (!this._isChrome(window))
             return false;
-        window.get_compositor_private()?.hide();
+        this._hideActor(window);
         return true;
     }
 
@@ -916,9 +943,7 @@ export default class KakaoTalkPopup {
     // 높이로 가른다. 띠는 29, 목록 창은 562다. 그림자는 제목이 다르므로
     // 이 검사를 거치지 않는다.
     _isChrome(window) {
-        if (window.get_title() === POPUP_TITLE)
-            return true;
-        return window.get_frame_rect().height < MAIN_MIN_HEIGHT;
+        return ['shadow', 'band'].includes(this._classify(window));
     }
 
     // 창이 처음 그려질 때는 아직 제목이 없고, 띠와 메시지를 가를 다른
@@ -939,7 +964,7 @@ export default class KakaoTalkPopup {
                 return;
             window.disconnect(id);
             window._kakaotalkChromeWatch = false;
-            window.get_compositor_private()?.hide();
+            this._hideActor(window);
         });
         window._kakaotalkChromeWatch = true;
         window.connect('unmanaged', () => {
@@ -997,7 +1022,7 @@ export default class KakaoTalkPopup {
         if (OWNER_CLASSES.includes(wmClass))
             window.connect('unmanaged', () => this._syncIndicatorSoon());
 
-        if (owned_tray_check(wmClass)) {
+        if (this._classify(window) === 'tray') {
             this._watchTray(window);
             // _retype뿐 아니라 여기서도 한다. 만들어지는 시점에는 액터가
             // 아직 없고, 생기기 전에는 숨길 것도 없다. 이 코드는 첫
@@ -1136,29 +1161,40 @@ export default class KakaoTalkPopup {
     // 하고, 작업 공간과 오버뷰 전환 때마다 또 그런다. 만들 때 hide() 한
     // 번으로는 1초 안에 되돌려진다. 반복해도 싸다. 창은 실행마다 하나뿐이고
     // 정당하게 보여질 일이 없다.
-    _hideTrayWindow(window) {
+    // 액터를 숨기고, 되돌릴 수 있게 적어둔다.
+    //
+    // 적어두는 것이 요점이다. 전에는 _hideChrome이 추적 없이 hide()를
+    // 불렀고, 그래서 잘못 숨긴 창을 놓아줄 방법이 없었다. 확장을 다시
+    // 읽어도 숨겨진 채 남았다. 고친 판을 올려도 화면은 그대로인 셈이다.
+    //
+    // keep은 계속 숨길지다. mutter는 창을 map할 때 액터를 보이게 하고,
+    // 작업 공간과 오버뷰 전환 때마다 또 그런다. 트레이 창은 정당하게
+    // 보여질 일이 없으니 그때마다 다시 숨긴다. 알림의 조각들은 곧
+    // 사라지므로 한 번이면 된다.
+    _hideActor(window, {keep = false} = {}) {
         const actor = window.get_compositor_private();
-        // 이 집합은 이번 enable의 것이지 그보다 오래 사는 액터의 것이
-        // 아니다. 액터에 저장한 플래그는 disable을 넘겨 살아남고, 다음
-        // enable이 그걸 이미 세워진 채로 발견해서 아무것도 안 한다. 창은
-        // 이 파일의 이전 판이 남긴 상태 그대로인데, 바꾼 것이 먹히는지
-        // 알아보는 방법으로는 나쁘다.
         if (!actor || this._hidden.has(actor))
-            return;
+            return false;
         this._hidden.add(actor);
-        const id = actor.connect('notify::visible', () => {
-            if (actor.visible)
-                actor.hide();
-        });
-        const entry = {obj: actor, id, show: true};
-        this._tray.push(entry);
+        const entry = {obj: actor, id: 0, show: true};
+        if (keep) {
+            entry.id = actor.connect('notify::visible', () => {
+                if (actor.visible)
+                    actor.hide();
+            });
+        }
+        this._undo.push(entry);
         // 액터는 자기 창과 함께 간다. 이미 없어진 것을 disable()에서
         // 건드리면 셸 로그에 경고와 스택 트레이스가 남는다. GObject에게
         // 아직 있느냐고 물어볼 방법이 없으니, 아직 있을 때 표시해둔다.
-        // 이게 필요한 것은 액터뿐이다. display는 모든 것보다 오래 산다.
         window.connect('unmanaged', () => (entry.dead = true));
         actor.hide();
-        console.log(`${TAG} tray window hidden`);
+        return true;
+    }
+
+    _hideTrayWindow(window) {
+        if (this._hideActor(window, {keep: true}))
+            console.log(`${TAG} tray window hidden`);
     }
 
     // Wine의 트레이 창을 닫으면 앱이 고립된다. 카카오톡은 최소화가 아니라
@@ -1179,7 +1215,7 @@ export default class KakaoTalkPopup {
             console.log(`${TAG} tray window closed, recovering`);
             this._runHelper('--recover');
         });
-        this._tray.push({obj: window, id});
+        this._undo.push({obj: window, id});
     }
 
     // flatpak이 설치되어 있는지. 메뉴를 만드는 근거가 되는 사실이다.
@@ -1239,7 +1275,7 @@ export default class KakaoTalkPopup {
         // 보이기도 전에 사라진다. 창 자체에는 어느 쪽인지 알려주는 것이
         // 없다. 다만 이건 우리가 요청한 것이니 요청했다는 사실을
         // 기억해둔다.
-        this._menuUntil = GLib.get_monotonic_time() + MENU_GRACE_US;
+        this._intend('menu', MENU_GRACE_US);
         // 메뉴가 1초쯤 뒤에 도착했을 때의 포인터가 아니라, 클릭이 있었던
         // 자리. 메뉴는 그것을 연 것 아래 있어야 하고, 그때쯤이면 포인터는
         // 이미 다른 데로 가 있는 경우가 많다.
@@ -1258,8 +1294,24 @@ export default class KakaoTalkPopup {
     // 이 검사에 떨어진 메뉴가 묶음에 들어가고, 그게 묶음을 연장하고, 그래서
     // 다음 메뉴도 떨어졌다. 그리고 각각은 알림 규칙에 따라 구석으로
     // 놓였다. 우클릭 세 번에 제자리 하나, 오른쪽 아래 구석 둘이었다.
+    // 확장이 방금 무엇을 했는지 적어둔다. 포커스와 창 올리기를 두고
+    // 판단하는 자리들이 서로를 모르는 것이 이 파일의 고질이었다. 새 규칙을
+    // 넣을 때마다 기존 행위자 전부에 대한 예외가 필요했고, 예외를 빠뜨리면
+    // 서로를 걷어찼다. _isStealingList가 인디케이터가 올린 창을 도로
+    // 밀어내서 인디케이터가 죽은 것처럼 보인 적이 있다.
+    //
+    // 그래서 밖에서 추측하는 대신 우리가 한 일을 적는다. 행위자를 더해도
+    // 예외가 아니라 한 줄이 는다.
+    _intend(what, forUs) {
+        this._intent[what] = GLib.get_monotonic_time() + forUs;
+    }
+
+    _intends(what) {
+        return GLib.get_monotonic_time() <= (this._intent?.[what] ?? 0);
+    }
+
     _expectingMenu() {
-        if (GLib.get_monotonic_time() >= this._menuUntil)
+        if (!this._intends('menu'))
             return false;
         if (!this._burst || GLib.get_monotonic_time() > this._burst.until)
             return true;
@@ -1317,7 +1369,7 @@ export default class KakaoTalkPopup {
         });
         // disable()이 놓아줄 수 있게 기록해둔다. 이건 우리보다 오래 사는
         // display에 걸려 있고, 지켜보는 메뉴는 영영 안 닫힐 수도 있다.
-        this._tray.push({obj: global.display, id});
+        this._undo.push({obj: global.display, id});
 
         // 또는 메뉴 안에서 뭔가가 선택되어 메뉴가 스스로 사라진다.
         window.connect('unmanaged', stop);
@@ -1470,6 +1522,10 @@ export default class KakaoTalkPopup {
     _describe(window) {
         const rect = window.get_frame_rect();
         return [
+            // 이 창을 무엇으로 봤는지. 분류가 한 곳으로 모였으니 그 답도
+            // 한 줄로 보여야 한다. 안 그러면 다음에 또 창 생김새만 보고
+            // 짐작하게 된다.
+            `kind=${this._classify(window)}`,
             `wm_class=${window.get_wm_class()}`,
             `pid=${window.get_pid()}`,
             `title=${JSON.stringify(window.get_title())}`,
