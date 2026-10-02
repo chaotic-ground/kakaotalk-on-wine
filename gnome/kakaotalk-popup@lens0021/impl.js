@@ -156,6 +156,9 @@ const OVERLAY_TOP_FRACTION = 0.12;
 // 마지막 방어선이다.
 const MENU_GRACE_US = 3 * 1000 * 1000;
 
+// 우리가 직접 올린 창을 다시 밀어내지 않을 시간. _isStealingList를 보라.
+const RAISE_GRACE_US = 3 * 1000 * 1000;
+
 // 재시작은 가는 길에 트레이 창을 없애는데, 그건 복구 대상과 똑같아 보인다.
 // 재시작을 덮을 만큼 길고, 1분 뒤의 두 번째 사고는 여전히 잡을 만큼
 // 짧게.
@@ -273,6 +276,7 @@ export default class KakaoTalkPopup {
         this._tray = [];
         this._hidden = new Set();
         this._menuUntil = 0;
+        this._raisedUntil = 0;
         this._menuAt = null;
         this._menuPlaced = false;
         this._syncId = 0;
@@ -445,6 +449,11 @@ export default class KakaoTalkPopup {
     // 것은 앱의 일이고, 거기까지 끼어들면 알림을 눌렀을 때 열리는 대화방도
     // 걷어차게 된다.
     _isStealingList(window) {
+        // 우리가 방금 올린 창이면 아니다. 인디케이터를 눌러서 올라온 것과
+        // 앱이 알림을 받고 혼자 올라온 것은 창도 같고 시점도 겹친다.
+        // 구별하는 것은 우리가 올렸는지뿐이다.
+        if (GLib.get_monotonic_time() <= this._raisedUntil)
+            return false;
         if (window.get_title() !== '카카오톡')
             return false;
         if (!this._pids?.has(window.get_pid()))
@@ -637,6 +646,10 @@ export default class KakaoTalkPopup {
             // 결정했는지 말해주는 줄도 없었다.
             if (this._config.log)
                 console.log(`${TAG} raising ${this._describe(main)}`);
+            // 우리가 올리는 것이라고 표시해둔다. 아래의 되돌리기가 이것까지
+            // 되돌리면 인디케이터가 아무 일도 안 하는 것이 된다. 실제로
+            // 그랬다.
+            this._raisedUntil = GLib.get_monotonic_time() + RAISE_GRACE_US;
             main.activate(global.get_current_time());
             return;
         }
