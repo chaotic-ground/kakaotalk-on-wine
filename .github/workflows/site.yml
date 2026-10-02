@@ -36,7 +36,7 @@ jobs:
           # 으로 건드린 커밋에서 읽는데, 얕은 체크아웃은 마지막 하나만 안다.
           fetch-depth: 0
 
-      - uses: chaotic-ground/wikven/actions/bake@79c58df9b0fd9a92143c3cd76e0e677f9de10d45  # v1.2.0
+      - uses: chaotic-ground/wikven/actions/bake@248de7419f63cf3653400adb11425784c10751bc  # v1.3.0
         with:
           source: site
           output: dist
