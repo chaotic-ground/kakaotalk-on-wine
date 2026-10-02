@@ -1,5 +1,5 @@
 {{DISPLAYTITLE:설치}}
-flatpak 하나와 GNOME 확장 하나입니다. root도 암호도 필요 없습니다.
+flatpak 하나와 GNOME 확장 하나면 됩니다. root도 암호도 필요 없습니다.
 
 == 앱 ==
 <syntaxhighlight lang="sh" copy>
@@ -7,25 +7,26 @@ curl -fLO https://github.com/chaotic-ground/kakaotalk-on-wine/releases/latest/do
 flatpak install --user kakaotalk.flatpak
 </syntaxhighlight>
 
-런타임은 flathub에서 옵니다. 거의 모두가 이미 갖고 있습니다. 없으면
-리모트를 먼저 더하십시오.
+런타임은 flathub에서 오는데, 거의 모두가 이미 갖고 있는 것입니다.
+없다면 리모트를 먼저 더하십시오.
 
 <syntaxhighlight lang="sh" copy>
 flatpak remote-add --user --if-not-exists flathub \
   https://dl.flathub.org/repo/flathub.flatpakrepo
 </syntaxhighlight>
 
-첫 실행 때 카카오 CDN에서 설치 파일을 받아 프리픽스를 만듭니다. 몇 분
+첫 실행 때 카카오 CDN에서 설치 파일을 받아 프리픽스를 만드느라 몇 분
 걸리고, 그 다음부터는 바로 뜹니다.
 
-64비트 클라이언트를 씁니다. 카카오는 윈도우용을 셋 배포하는데, 검색으로
-나오는 <code>app-pc.kakaocdn.net/talk/win32/</code>는 32비트입니다.
+쓰는 것은 64비트 클라이언트입니다. 카카오가 윈도우용을 셋 배포하는데,
+검색으로 흔히 나오는 <code>app-pc.kakaocdn.net/talk/win32/</code>는
+32비트라 쓰지 않습니다.
 
 == GNOME 확장 ==
 팝업의 자리와 포커스, 트레이를 대신하는 인디케이터, 카카오톡 자신의 메뉴
 열기를 맡습니다. 샌드박스 안의 앱은
 <code>~/.local/share/gnome-shell/extensions</code>에 아무것도 넣을 수
-없어서 손으로 깔아야 합니다.
+없기 때문에, 이것만은 손으로 깔아야 합니다.
 
 <syntaxhighlight lang="sh" copy>
 git clone https://github.com/chaotic-ground/kakaotalk-on-wine
@@ -34,8 +35,8 @@ cp -r kakaotalk-on-wine/gnome/kakaotalk-popup@lens0021 \
 gnome-extensions enable kakaotalk-popup@lens0021
 </syntaxhighlight>
 
-확장을 먼저 깔아도 됩니다. 아무것도 설치되어 있지 않으면 인디케이터가
-flatpak 설치를 권합니다.
+확장을 먼저 깔아도 되는데, 아무것도 설치되어 있지 않으면 인디케이터가
+flatpak 설치를 권해줍니다.
 
 설정은
 [https://github.com/chaotic-ground/kakaotalk-on-wine/blob/main/gnome/README.md gnome/README.md]에 있습니다.
@@ -47,11 +48,12 @@ flatpak 설치를 권합니다.
 wine: Call from ... to unimplemented function user32.dll.CreateDialogParamW
 </syntaxhighlight>
 
-백신이 Wine의 PE 모듈을 격리한 것입니다. 한 번에 92개가 사라진 적이
-있습니다. flatpak 안의 Wine은 읽기 전용이라 안전하고, 프리픽스는
-<code>~/.var/app</code> 아래라 그렇지 않습니다.
+백신이 Wine의 PE 모듈을 격리하면 이렇게 됩니다. 한 번에 92개가 사라진
+적도 있습니다. flatpak 안의 Wine은 읽기 전용이라 안전하지만, 프리픽스는
+<code>~/.var/app</code> 아래에 있어 그렇지 못합니다.
 
-'''돌고 있는 앱에 <code>flatpak run</code>을 한 번 더 하지 마십시오.''' 앱이
-죽습니다. 두 번째 클라이언트 이야기가 아니라, 다른 프로세스를 들여다보는
-wine 프로세스면 무엇이든 그렇습니다. 인스턴스마다 PID 네임스페이스가
-따로이기 때문입니다. 창을 되찾으려면 패널 인디케이터를 쓰십시오.
+'''돌고 있는 앱에 <code>flatpak run</code>을 한 번 더 하지 마십시오.'''
+앱이 죽습니다. 두 번째 클라이언트를 띄우는 이야기가 아니라, 다른
+프로세스를 들여다보는 wine 프로세스면 무엇이든 그렇습니다. 인스턴스마다
+PID 네임스페이스가 따로이기 때문입니다. 창을 되찾고 싶을 때는 패널
+인디케이터를 쓰십시오.
