@@ -25,9 +25,9 @@ RLPAGEMODULES=[];</script>
 <meta property="og:site_name" content="카카오톡 on Wine">
 <meta property="og:url" content="https://chaotic-ground.github.io/kakaotalk-on-wine/%ED%8C%A8%EC%B9%98/0006.html">
 <meta property="og:description" content="GNOME 스크린샷이 안 붙음">
-<meta property="article:modified_time" content="2026-10-02T12:38:09Z">
-<meta property="article:published_time" content="2026-10-02T12:38:09Z">
-<script type="application/ld+json">{"@context":"http:\/\/schema.org","@type":"Article","name":"0006 \ud074\ub9bd\ubcf4\ub4dc\uc758 PNG \ub514\ucf54\ub529 - \uce74\uce74\uc624\ud1a1 on Wine","headline":"0006 \ud074\ub9bd\ubcf4\ub4dc\uc758 PNG \ub514\ucf54\ub529 - \uce74\uce74\uc624\ud1a1 on Wine","mainEntityOfPage":"0006 \ud074\ub9bd\ubcf4\ub4dc\uc758 PNG \ub514\ucf54\ub529","identifier":"https:\/\/chaotic-ground.github.io\/kakaotalk-on-wine\/%ED%8C%A8%EC%B9%98\/0006.html","url":"https:\/\/chaotic-ground.github.io\/kakaotalk-on-wine\/%ED%8C%A8%EC%B9%98\/0006.html","description":"GNOME \uc2a4\ud06c\ub9b0\uc0f7\uc774 \uc548 \ubd99\uc74c","dateModified":"2026-10-02T12:38:09Z","datePublished":"2026-10-02T12:38:09Z","image":[],"author":{"@type":"Organization","name":"\uce74\uce74\uc624\ud1a1 on Wine","url":"https:\/\/chaotic-ground.github.io","logo":[]},"publisher":{"@type":"Organization","name":"\uce74\uce74\uc624\ud1a1 on Wine","url":"https:\/\/chaotic-ground.github.io","logo":[]},"potentialAction":{"@type":"SearchAction","target":"#","query-input":"required name=search_term"}}</script>
+<meta property="article:modified_time" content="2026-10-02T12:42:44Z">
+<meta property="article:published_time" content="2026-10-02T12:42:44Z">
+<script type="application/ld+json">{"@context":"http:\/\/schema.org","@type":"Article","name":"0006 \ud074\ub9bd\ubcf4\ub4dc\uc758 PNG \ub514\ucf54\ub529 - \uce74\uce74\uc624\ud1a1 on Wine","headline":"0006 \ud074\ub9bd\ubcf4\ub4dc\uc758 PNG \ub514\ucf54\ub529 - \uce74\uce74\uc624\ud1a1 on Wine","mainEntityOfPage":"0006 \ud074\ub9bd\ubcf4\ub4dc\uc758 PNG \ub514\ucf54\ub529","identifier":"https:\/\/chaotic-ground.github.io\/kakaotalk-on-wine\/%ED%8C%A8%EC%B9%98\/0006.html","url":"https:\/\/chaotic-ground.github.io\/kakaotalk-on-wine\/%ED%8C%A8%EC%B9%98\/0006.html","description":"GNOME \uc2a4\ud06c\ub9b0\uc0f7\uc774 \uc548 \ubd99\uc74c","dateModified":"2026-10-02T12:42:44Z","datePublished":"2026-10-02T12:42:44Z","image":[],"author":{"@type":"Organization","name":"\uce74\uce74\uc624\ud1a1 on Wine","url":"https:\/\/chaotic-ground.github.io","logo":[]},"publisher":{"@type":"Organization","name":"\uce74\uce74\uc624\ud1a1 on Wine","url":"https:\/\/chaotic-ground.github.io","logo":[]},"potentialAction":{"@type":"SearchAction","target":"#","query-input":"required name=search_term"}}</script>
 </head>
 <body class="mediawiki ltr sitedir-ltr mw-hide-empty-elt ns-0 ns-subject mw-editable page-패치_0006 rootpage-패치_0006 skin-monobook action-view skin--responsive">
 <div id="mw-aria-live-region" class="mw-aria-live-region" aria-live="polite"></div><div id="globalWrapper">
@@ -57,26 +57,26 @@ RLPAGEMODULES=[];</script>
 	<div class="pi-data-value pi-font"><a rel="nofollow" class="external text" href="https://github.com/chaotic-ground/kakaotalk-on-wine/blob/main/patches/0006-winewayland-Decode-a-PNG-from-the-clipboard.patch">0006-winewayland-Decode-a-PNG-from-the-clipboard.patch</a></div>
 </div></aside>
 
-<p class="mw-empty-elt"></p><p><a href="../패치/0003.html" title="패치/0003">0003</a>은 Firefox와 GTK가 내놓는 것을 다루고, GNOME
-스크린샷은 다루지 못합니다. 그쪽은 <code>image/png</code> 하나만
-내놓습니다.
-</p><p>디코딩을 드라이버에서 하는 이유는 더 나은 자리가 없기 때문입니다.
-<code>CF_DIB</code>을 <code>CF_BITMAP</code>으로 바꾸는 포맷 합성은
-<b>서버</b>에 있고 내장 포맷 ID만 압니다. "PNG"는 실행 중에 등록되는
-포맷이라 거기 들어갈 수 없습니다.
+<p class="mw-empty-elt"></p><p><a href="../패치/0003.html" title="패치/0003">0003</a>이 다루는 것은 Firefox와 GTK가 내놓는 것까지이고,
+<code>image/png</code> 하나만 내놓는 GNOME 스크린샷은 여전히 붙지
+않았습니다.
+</p><p>디코딩을 드라이버에서 하는 것은 썩 내키는 자리라서가 아니라 더 나은
+자리가 없기 때문입니다. <code>CF_DIB</code>을 <code>CF_BITMAP</code>으로
+바꾸는 포맷 합성은 <b>서버</b>에 있으면서 내장 포맷 ID만 아는데, "PNG"는
+실행 중에 등록되는 포맷이라 애초에 거기 들어갈 수가 없습니다.
 </p>
 <div class="mw-heading mw-heading2"><h2 id="알아둘_결정_셋"><span id=".EC.95.8C.EC.95.84.EB.91.98_.EA.B2.B0.EC.A0.95_.EC.85.8B"></span>알아둘 결정 셋</h2></div>
 <dl><dt>알파는 흰색 위에 합성합니다</dt>
-<dd>DIB에는 합의된 알파 채널이 없습니다. 32비트의 최상위 바이트는 예약이고 앱마다 해석이 다릅니다. 모서리가 둥근 스크린샷이 검은 배경에 붙으면 망가져 보이는데, 그걸 클립보드 탓이라 짐작하기 어렵습니다.</dd>
+<dd>DIB에는 모두가 합의한 알파 채널이 없습니다. 32비트의 최상위 바이트는 예약된 자리이고 앱마다 해석이 달라서, 그대로 두면 모서리가 둥근 스크린샷이 검은 배경 위에 붙어 망가져 보입니다. 그런 화면을 보고 클립보드를 의심하기란 쉽지 않습니다.</dd>
 <dt><code>image/png</code>이 <code>CF_DIB</code>이 됩니다</dt>
 <dd>전에는 "PNG"라는 등록 포맷이었고, 그 이름을 찾는 것은 없습니다.</dd>
 <dt>인코더는 없습니다</dt>
-<dd>필요도 없습니다. 클립보드 포맷 하나는 표에서 처음 만나는 mime 하나로만 나가고, <code>CF_DIB</code>에게 그건 <code>image/bmp</code>입니다.</dd></dl>
+<dd>있을 필요도 없습니다. 클립보드 포맷 하나는 표에서 처음 만나는 mime 하나로만 나가는데, <code>CF_DIB</code>에게 그것은 <code>image/bmp</code>입니다.</dd></dl>
 <div class="mw-heading mw-heading2"><h2 id="업스트림에_못_내는_이유"><span id=".EC.97.85.EC.8A.A4.ED.8A.B8.EB.A6.BC.EC.97.90_.EB.AA.BB_.EB.82.B4.EB.8A.94_.EC.9D.B4.EC.9C.A0"></span>업스트림에 못 내는 이유</h2></div>
-<p><code>-lpng16</code>을 <code>Makefile.in</code>에 직접 박았습니다.
-업스트림 판이라면 그러지 않을 것입니다. Wine의 configure는 PE 쪽
-libpng(<code>PNG_PE_LIBS</code>)만 찾으므로 유닉스 쪽 검사를 먼저
-추가해야 합니다.
+<p><code>-lpng16</code>을 <code>Makefile.in</code>에 직접 박아 넣었는데,
+업스트림에 낼 판이라면 이렇게 쓰지 않을 것입니다. Wine의 configure가 PE
+쪽 libpng(<code>PNG_PE_LIBS</code>)만 찾기 때문에, 제대로 하려면 유닉스
+쪽 검사를 먼저 추가해야 합니다.
 </p>
 </div>
 <div class="printfooter" data-nosnippet="">Retrieved from "<a dir="ltr" href="https://chaotic-ground.github.io/kakaotalk-on-wine/패치/0006.html">https://chaotic-ground.github.io/kakaotalk-on-wine/패치/0006.html</a>"</div></div>
@@ -173,7 +173,7 @@ libpng(<code>PNG_PE_LIBS</code>)만 찾으므로 유닉스 쪽 검사를 먼저
 			<a href="https://www.mediawiki.org/" class="cdx-button cdx-button--fake-button cdx-button--size-large cdx-button--fake-button--enabled"><picture><source media="(min-width: 500px)" srcset="../assets/img-8a482a3be80b.svg" width="88" height="31"><img src="../assets/img-927df56b7f04.svg" alt="Powered by MediaWiki" lang="en" width="25" height="25" loading="lazy"></picture></a><a href="https://github.com/chaotic-ground/wikven" class="cdx-button cdx-button--fake-button cdx-button--size-large cdx-button--fake-button--enabled"><picture><source media="(min-width: 500px)" srcset="../assets/img-47dbe07cd516.svg" width="88" height="31"><img src="../assets/img-9c8019424ff1.svg" width="25" height="25" alt="Built with wikven" lang="en" loading="lazy"></picture></a>
 		</div>
 		<ul id="f-list">
-			<li id="lastmod"> This page was last edited on 2 October 2026, at 12:38.</li>
+			<li id="lastmod"> This page was last edited on 2 October 2026, at 12:42.</li>
 			<li id="wikven-licenses"><a href="../Licenses.html">Licenses</a></li>
 		</ul>
 	</div>

@@ -25,9 +25,9 @@ RLPAGEMODULES=[];</script>
 <meta property="og:site_name" content="카카오톡 on Wine">
 <meta property="og:url" content="https://chaotic-ground.github.io/kakaotalk-on-wine/%ED%8C%A8%EC%B9%98/0005.html">
 <meta property="og:description" content="트레이 우클릭 메뉴가 어디에도 안 뜸">
-<meta property="article:modified_time" content="2026-10-02T12:38:09Z">
-<meta property="article:published_time" content="2026-10-02T12:38:09Z">
-<script type="application/ld+json">{"@context":"http:\/\/schema.org","@type":"Article","name":"0005 \uc228\uaca8\uc9c4 \ucc3d\uc774 \uc8fc\uc778\uc778 \ucc3d\ub3c4 \ubcf4\uc774\uac8c - \uce74\uce74\uc624\ud1a1 on Wine","headline":"0005 \uc228\uaca8\uc9c4 \ucc3d\uc774 \uc8fc\uc778\uc778 \ucc3d\ub3c4 \ubcf4\uc774\uac8c - \uce74\uce74\uc624\ud1a1 on Wine","mainEntityOfPage":"0005 \uc228\uaca8\uc9c4 \ucc3d\uc774 \uc8fc\uc778\uc778 \ucc3d\ub3c4 \ubcf4\uc774\uac8c","identifier":"https:\/\/chaotic-ground.github.io\/kakaotalk-on-wine\/%ED%8C%A8%EC%B9%98\/0005.html","url":"https:\/\/chaotic-ground.github.io\/kakaotalk-on-wine\/%ED%8C%A8%EC%B9%98\/0005.html","description":"\ud2b8\ub808\uc774 \uc6b0\ud074\ub9ad \uba54\ub274\uac00 \uc5b4\ub514\uc5d0\ub3c4 \uc548 \ub738","dateModified":"2026-10-02T12:38:09Z","datePublished":"2026-10-02T12:38:09Z","image":[],"author":{"@type":"Organization","name":"\uce74\uce74\uc624\ud1a1 on Wine","url":"https:\/\/chaotic-ground.github.io","logo":[]},"publisher":{"@type":"Organization","name":"\uce74\uce74\uc624\ud1a1 on Wine","url":"https:\/\/chaotic-ground.github.io","logo":[]},"potentialAction":{"@type":"SearchAction","target":"#","query-input":"required name=search_term"}}</script>
+<meta property="article:modified_time" content="2026-10-02T12:42:44Z">
+<meta property="article:published_time" content="2026-10-02T12:42:44Z">
+<script type="application/ld+json">{"@context":"http:\/\/schema.org","@type":"Article","name":"0005 \uc228\uaca8\uc9c4 \ucc3d\uc774 \uc8fc\uc778\uc778 \ucc3d\ub3c4 \ubcf4\uc774\uac8c - \uce74\uce74\uc624\ud1a1 on Wine","headline":"0005 \uc228\uaca8\uc9c4 \ucc3d\uc774 \uc8fc\uc778\uc778 \ucc3d\ub3c4 \ubcf4\uc774\uac8c - \uce74\uce74\uc624\ud1a1 on Wine","mainEntityOfPage":"0005 \uc228\uaca8\uc9c4 \ucc3d\uc774 \uc8fc\uc778\uc778 \ucc3d\ub3c4 \ubcf4\uc774\uac8c","identifier":"https:\/\/chaotic-ground.github.io\/kakaotalk-on-wine\/%ED%8C%A8%EC%B9%98\/0005.html","url":"https:\/\/chaotic-ground.github.io\/kakaotalk-on-wine\/%ED%8C%A8%EC%B9%98\/0005.html","description":"\ud2b8\ub808\uc774 \uc6b0\ud074\ub9ad \uba54\ub274\uac00 \uc5b4\ub514\uc5d0\ub3c4 \uc548 \ub738","dateModified":"2026-10-02T12:42:44Z","datePublished":"2026-10-02T12:42:44Z","image":[],"author":{"@type":"Organization","name":"\uce74\uce74\uc624\ud1a1 on Wine","url":"https:\/\/chaotic-ground.github.io","logo":[]},"publisher":{"@type":"Organization","name":"\uce74\uce74\uc624\ud1a1 on Wine","url":"https:\/\/chaotic-ground.github.io","logo":[]},"potentialAction":{"@type":"SearchAction","target":"#","query-input":"required name=search_term"}}</script>
 </head>
 <body class="mediawiki ltr sitedir-ltr mw-hide-empty-elt ns-0 ns-subject mw-editable page-패치_0005 rootpage-패치_0005 skin-monobook action-view skin--responsive">
 <div id="mw-aria-live-region" class="mw-aria-live-region" aria-live="polite"></div><div id="globalWrapper">
@@ -57,18 +57,20 @@ RLPAGEMODULES=[];</script>
 	<div class="pi-data-value pi-font"><a rel="nofollow" class="external text" href="https://github.com/chaotic-ground/kakaotalk-on-wine/blob/main/patches/0005-winewayland-Show-a-window-owned-by-a-hidden-one.patch">0005-winewayland-Show-a-window-owned-by-a-hidden-one.patch</a></div>
 </div></aside>
 
-<p class="mw-empty-elt"></p><p>트레이 메뉴가 아예 안 떴습니다. 엉뚱한 자리도 뒤도 아니고 어디에도
-없었습니다.
+<p class="mw-empty-elt"></p><p>트레이 메뉴가 아예 뜨지 않았습니다. 엉뚱한 자리에 뜬 것도 다른 창 뒤에
+가린 것도 아니고, 그냥 어디에도 없었습니다.
 </p><p><code>wayland_win_data_create_wayland_surface</code>는 주인이 있는 창에
 주인 표면의 <b>서브서피스</b>를 줍니다. 화면에 없는 주인의 표면에는
 역할이 없고, 드라이버는 빈 xdg_toplevel로 컴포지터를 채우지 않으려고
 일부러 그렇게 둡니다. 지도에 없는 표면의 서브서피스는 어디에도 그려지지
 않습니다.
-</p><p>주인이 실제로 화면에 있을 때만 서브서피스로 붙이고, 아니면 자기 표면을
-주도록 했습니다. 주인이 없는 창은 원래 그렇게 하고 있었습니다.
-</p><p>화면이 아니라 Win32에 물어서 찾았습니다. 메뉴 창은 존재하고
-<code>visible=1</code>, 크기 124x141, 위치도 멀쩡한데, 주인이 0x0에
-<code>visible=0</code>인 <code>EVA_Window_Dblclk</code>였습니다.
+</p><p>그래서 주인이 실제로 화면에 있을 때만 서브서피스로 붙이고, 그렇지
+않으면 자기 표면을 주도록 했습니다. 주인이 아예 없는 창은 원래부터 그렇게
+하고 있었습니다.
+</p><p>이것은 화면이 아니라 Win32에 물어서 찾아낸 것입니다. 메뉴 창은 분명히
+존재하고 <code>visible=1</code>에 크기 124x141, 위치까지 멀쩡한데,
+주인이 0x0 크기에 <code>visible=0</code>인
+<code>EVA_Window_Dblclk</code>였습니다.
 </p><p>이 변경이 넓이 없는 창까지 올려버려서 <a href="../패치/0009.html" title="패치/0009">0009</a>가 뒤를
 수습합니다.
 </p>
@@ -167,7 +169,7 @@ RLPAGEMODULES=[];</script>
 			<a href="https://www.mediawiki.org/" class="cdx-button cdx-button--fake-button cdx-button--size-large cdx-button--fake-button--enabled"><picture><source media="(min-width: 500px)" srcset="../assets/img-8a482a3be80b.svg" width="88" height="31"><img src="../assets/img-927df56b7f04.svg" alt="Powered by MediaWiki" lang="en" width="25" height="25" loading="lazy"></picture></a><a href="https://github.com/chaotic-ground/wikven" class="cdx-button cdx-button--fake-button cdx-button--size-large cdx-button--fake-button--enabled"><picture><source media="(min-width: 500px)" srcset="../assets/img-47dbe07cd516.svg" width="88" height="31"><img src="../assets/img-9c8019424ff1.svg" width="25" height="25" alt="Built with wikven" lang="en" loading="lazy"></picture></a>
 		</div>
 		<ul id="f-list">
-			<li id="lastmod"> This page was last edited on 2 October 2026, at 12:38.</li>
+			<li id="lastmod"> This page was last edited on 2 October 2026, at 12:42.</li>
 			<li id="wikven-licenses"><a href="../Licenses.html">Licenses</a></li>
 		</ul>
 	</div>
