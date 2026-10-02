@@ -3,28 +3,28 @@
 |번호=0006
 |증상=GNOME 스크린샷이 안 붙음
 |파일=<code>winewayland.drv/wayland_data_device.c</code>
-|업스트림=안 냈습니다. 이대로는 받지 않을 것입니다
+|업스트림=안 냈다. 이대로는 받지 않을 것이다
 |패치=0006-winewayland-Decode-a-PNG-from-the-clipboard.patch
 }}
 [[패치/0003|0003]]은 Firefox와 GTK가 내놓는 것을 다루고, GNOME
-스크린샷은 다루지 못합니다. 그쪽은 <code>image/png</code> 하나만
-내놓습니다.
+스크린샷은 다루지 못한다. 그쪽은 <code>image/png</code> 하나만
+내놓는다.
 
-디코딩을 드라이버에서 하는 이유는 더 나은 자리가 없기 때문입니다.
+디코딩을 드라이버에서 하는 이유는 더 나은 자리가 없기 때문이다.
 <code>CF_DIB</code>을 <code>CF_BITMAP</code>으로 바꾸는 포맷 합성은
-'''서버'''에 있고 내장 포맷 ID만 압니다. "PNG"는 실행 중에 등록되는
-포맷이라 거기 들어갈 수 없습니다.
+'''서버'''에 있고 내장 포맷 ID만 안다. "PNG"는 실행 중에 등록되는
+포맷이라 거기 들어갈 수 없다.
 
 == 알아둘 결정 셋 ==
-; 알파는 흰색 위에 합성합니다
-: DIB에는 합의된 알파 채널이 없습니다. 32비트의 최상위 바이트는 예약이고 앱마다 해석이 다릅니다. 모서리가 둥근 스크린샷이 검은 배경에 붙으면 망가져 보이는데, 그걸 클립보드 탓이라 짐작하기 어렵습니다.
-; <code>image/png</code>이 <code>CF_DIB</code>이 됩니다
-: 전에는 "PNG"라는 등록 포맷이었고, 그 이름을 찾는 것은 없습니다.
-; 인코더는 없습니다
-: 필요도 없습니다. 클립보드 포맷 하나는 표에서 처음 만나는 mime 하나로만 나가고, <code>CF_DIB</code>에게 그건 <code>image/bmp</code>입니다.
+; 알파는 흰색 위에 합성한다
+: DIB에는 합의된 알파 채널이 없다. 32비트의 최상위 바이트는 예약이고 앱마다 해석이 다르다. 모서리가 둥근 스크린샷이 검은 배경에 붙으면 망가져 보이는데, 그걸 클립보드 탓이라 짐작하기 어렵다.
+; <code>image/png</code>이 <code>CF_DIB</code>이 된다
+: 전에는 "PNG"라는 등록 포맷이었고, 그 이름을 찾는 것은 없다.
+; 인코더는 없다
+: 필요도 없다. 클립보드 포맷 하나는 표에서 처음 만나는 mime 하나로만 나가고, <code>CF_DIB</code>에게 그건 <code>image/bmp</code>이다.
 
 == 업스트림에 못 내는 이유 ==
-<code>-lpng16</code>을 <code>Makefile.in</code>에 직접 박았습니다.
-업스트림 판이라면 그러지 않을 것입니다. Wine의 configure는 PE 쪽
+<code>-lpng16</code>을 <code>Makefile.in</code>에 직접 박았다.
+업스트림 판이라면 그러지 않을 것이다. Wine의 configure는 PE 쪽
 libpng(<code>PNG_PE_LIBS</code>)만 찾으므로 유닉스 쪽 검사를 먼저
-추가해야 합니다.
+추가해야 한다.

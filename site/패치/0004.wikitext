@@ -3,32 +3,32 @@
 |번호=0004
 |증상=드보락에서 Ctrl+V가 각인이 V인 키에서 동작
 |파일=<code>winewayland.drv/wayland_keyboard.c</code>
-|업스트림=안 냈습니다
+|업스트림=안 냈다
 |패치=0004-winewayland-Keep-the-keyboard-layout.patch
 }}
-드보락에서 모든 단축키가 QWERTY 자리에 있었습니다. Ctrl+V가 v를 치는
-키가 아니라 각인이 V인 키에서 동작했습니다. 스캔코드는 제대로 도착하고
-드라이버의 드보락 표도 맞습니다. 그 표가 안 쓰였습니다.
+드보락에서 모든 단축키가 QWERTY 자리에 있었다. Ctrl+V가 v를 치는
+키가 아니라 각인이 V인 키에서 동작했다. 스캔코드는 제대로 도착하고
+드라이버의 드보락 표도 맞다. 그 표가 안 쓰였다.
 
 <code>WAYLAND_KbdLayerDescriptor</code>는 HKL을 다시 만들어 비교하는
 식으로 레이아웃을 찾고, <code>get_layout_hkl</code>은 상위 워드에
-레이아웃의 언어를 넣습니다. 묻는 쪽은 스캔코드를 VK로 바꾸는 키보드
-이벤트 스레드인데, 이 스레드는 레이아웃이 활성화된 적이 없습니다.
-활성화는 포커스된 창에 보내는 메시지라 여기 오지 않습니다. 그래서
+레이아웃의 언어를 넣는다. 묻는 쪽은 스캔코드를 VK로 바꾸는 키보드
+이벤트 스레드인데, 이 스레드는 레이아웃이 활성화된 적이 없다.
+활성화는 포커스된 창에 보내는 메시지라 여기 오지 않는다. 그래서
 <code>NtUserGetKeyboardLayout</code>이 로캘로 지어낸
 <code>MAKELONG(locale, locale)</code>을 건네고, 로캘이 레이아웃의 언어와
-같지 않으면 아무것도 일치하지 않습니다. 못 찾으면 NULL이고, win32u는
-내장 표로 답합니다. QWERTY입니다.
+같지 않으면 아무것도 일치하지 않는다. 못 찾으면 NULL이고, win32u는
+내장 표로 답한다. QWERTY이다.
 
 == 왜 아무도 신고하지 않았나 ==
-QWERTY 사용자에게는 그 잘못된 폴백이 우연히 맞습니다. 이 꾸러미는
-프리픽스 로캘이 한국어라 모두에게 어긋나 있습니다.
+QWERTY 사용자에게는 그 잘못된 폴백이 우연히 맞다. 이 꾸러미는
+프리픽스 로캘이 한국어라 모두에게 어긋나 있다.
 
-<code>WINEDEBUG=+keyboard</code>를 켜면 한 줄로 드러납니다.
+<code>WINEDEBUG=+keyboard</code>를 켜면 한 줄로 드러난다.
 
 <syntaxhighlight lang="text">
 warn:keyboard:WAYLAND_KbdLayerDescriptor Failed to find Xkb layout for HKL 0x4120412
 </syntaxhighlight>
 
 <code>0412</code>는 한국어이고, 어느 레이아웃도 상위 워드에 그걸 갖고
-있지 않습니다.
+있지 않다.
