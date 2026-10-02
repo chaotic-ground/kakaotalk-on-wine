@@ -6,8 +6,8 @@
 |업스트림=[https://bugs.winehq.org/show_bug.cgi?id=56043 56043], [https://bugs.winehq.org/show_bug.cgi?id=57709 57709]. 둘 다 열려 있고 UNCONFIRMED
 |패치=0002-winewayland-Scroll-from-a-touchpad.patch
 }}
-휠 마우스는 되는데 두 손가락은 아무 일도 없었다. 그 모양이 곧
-답이다. Wine이 <code>wl_pointer.axis_value120</code>만 처리하고
-<code>wl_pointer.axis</code>는 빈 함수로 두었기 때문이다.
-<code>value120</code>은 휠의 이벤트이다. 터치패드에는 눈금이 없어서
-거리만 보내고, 그 거리가 빈 함수로 들어갔다.
+휠 마우스는 되는데 두 손가락은 아무 일도 없었습니다. 그 모양이 곧
+답입니다. Wine이 <code>wl_pointer.axis_value120</code>만 처리하고
+<code>wl_pointer.axis</code>는 빈 함수로 두었기 때문입니다.
+<code>value120</code>은 휠의 이벤트입니다. 터치패드에는 눈금이 없어서
+거리만 보내고, 그 거리가 빈 함수로 들어갔습니다.
