@@ -10,6 +10,12 @@
 # 올라와서, 증상이 "시간 초과"로만 보였다.
 set -euo pipefail
 
+# 셸이 systemd가 있다고 판단하는 근거를 찍는다. loginManager.js가
+# /run/systemd/seats가 있는지로 고르고, 있다고 보면 logind에 붙으려다
+# 실패해서 background.js 초기화가 깨진다.
+echo "e2e: /run/systemd =" "$(ls -d /run/systemd 2>&1)" >&2
+echo "e2e: /run/systemd/seats =" "$(ls -d /run/systemd/seats 2>&1)" >&2
+
 mkdir -p /run/dbus
 dbus-daemon --system --fork
 
