@@ -7,7 +7,7 @@ curl -fLO https://github.com/chaotic-ground/kakaotalk-on-wine/releases/latest/do
 flatpak install --user kakaotalk.flatpak
 </syntaxhighlight>
 
-런타임은 flathub에서 오는데, 거의 모두가 이미 갖고 있는 것입니다.
+런타임은 flathub에서 오는데, 거의 모두가 이미 갖고 있습니다.
 없다면 리모트를 먼저 더하십시오.
 
 <syntaxhighlight lang="sh" copy>
