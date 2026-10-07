@@ -28,6 +28,18 @@ rules:
       include: ['impl.js']
     pattern-regex: "get_title\\(\\) [!=]== '카카오톡'"
 
+  - id: loader-version-from-clock
+    languages: [generic]
+    severity: WARNING
+    message: >-
+      동적 import의 질의 문자열에 시계를 쓰지 마세요. impl.js의 수정 시각이어야
+      합니다. enable()마다 URL이 달라지면 모듈 캐시가 사본을 셸이 끝날 때까지
+      들고 있고, 모듈 수준의 registerClass가 해제되지 않는 GType을 그만큼
+      만듭니다. 열흘에 170벌이 쌓여 gnome-shell이 RSS 2.6GB까지 갔습니다.
+    paths:
+      include: ['extension.js']
+    pattern-regex: '\?v=\$\{(Date\.now|GLib\.get_(real|monotonic)_time)'
+
   - id: long-comment-block
     languages: [generic]
     severity: INFO
