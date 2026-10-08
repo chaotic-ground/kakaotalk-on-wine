@@ -77,6 +77,11 @@ flatpak run io.github.chaotic_ground.KakaoTalk --reinstall
 때마다 93MB를 받는 것이 안 뜨는 것보다 나쁘기 때문입니다. 그때는 저장소에
 알려주세요.
 
+고치기 전에 그때의 pak과 업데이터 로그를
+<code>~/.var/app/io.github.chaotic_ground.KakaoTalk/cache/kakaotalk/stuck-update/</code>에
+남깁니다. Wine에서 재현해 고치려면 그것이 있어야 합니다. 저장소에 알려주실
+때 같이 주시면 좋습니다.
+
 === 두 번 실행하면 안 되는 이유 ===
 돌고 있는 앱에 <code>flatpak run</code>을 한 번 더 하면 앱이 죽습니다.
 두 번째 클라이언트를 띄우는 이야기가 아니라, 다른 프로세스를 들여다보는
