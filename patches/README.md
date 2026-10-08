@@ -16,8 +16,14 @@
 ## 빌드
 
 `.github/workflows/wine.yml`이 합니다. `patches/`를 건드려 main에 올리면
-돌고, 나온 tarball이 `wine` 아티팩트로 붙습니다. 러너는 코어가 적어 두어
-시간 걸립니다.
+돌고, 나온 tarball이 `wine-dnf`와 `wine-apt` 아티팩트로 붙습니다. 러너는
+코어가 적어 두어 시간 걸립니다.
+
+Fedora와 우분투 양쪽에서 짓습니다. configure는 없는 라이브러리를 보고
+멈추지 않고 그 기능이 빠진 Wine을 지을 뿐이라, 한쪽 배포판의 기본값에
+기대고 있으면 빌드는 조용히 끝나고 쓰다가 드러납니다. 배포되는 것은
+Fedora 쪽입니다. 개발하는 기계가 그것이고 지금까지 올라간 것도 그렇게
+지어졌습니다.
 
 릴리스 자산까지 바꾸려면 workflow_dispatch로 `publish`를 켜고 돌리세요.
 그 다음 매니페스트의 sha256을 요약에 적힌 값으로 고쳐야 설치되는 것이
@@ -49,6 +55,21 @@ toolbox run -c wine-build sh -c '
   ../configure --enable-archs=i386,x86_64 --prefix=$HOME/wine-emoji &&
   make -j$(nproc) && make install'
 ```
+
+데비안 계열이면 의존성만 다르고 나머지는 같습니다. `deb-src`를 켜야
+`build-dep`이 돕니다.
+
+```sh
+sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
+apt-get update
+apt-get build-dep -y wine
+apt-get install -y gcc-mingw-w64-i686 gcc-mingw-w64-x86-64 libpng-dev
+```
+
+어느 쪽이든 configure가 끝나면 로그에서 `not found`를 한 번 보세요.
+wayland, xkbcommon, png, freetype, fontconfig, gnutls, vulkan 중 하나라도
+거기 있으면 그 기능이 빠진 채로 빌드가 성공합니다. 워크플로는 그 줄을
+보고 떨어집니다.
 
 그 임시 git 저장소에 커밋해서 패치를 만들 생각이라면 빌드 디렉터리를
 빼세요. 빌드 후 `git add -A`는 오브젝트 파일 3GB를 담고, `format-patch`는
