@@ -26,9 +26,9 @@ RLPAGEMODULES=[];</script>
 <meta property="og:site_name" content="카카오톡 on Wine">
 <meta property="og:url" content="https://chaotic-ground.github.io/kakaotalk-on-wine/%EC%84%A4%EC%B9%98.html">
 <meta property="og:description" content="flatpak 하나와 GNOME 확장 하나면 됩니다. root도 암호도 필요 없습니다.">
-<meta property="article:modified_time" content="2026-10-08T02:23:39Z">
-<meta property="article:published_time" content="2026-10-08T02:23:39Z">
-<script type="application/ld+json">{"@context":"http:\/\/schema.org","@type":"Article","name":"\uc124\uce58 - \uce74\uce74\uc624\ud1a1 on Wine","headline":"\uc124\uce58 - \uce74\uce74\uc624\ud1a1 on Wine","mainEntityOfPage":"\uc124\uce58","identifier":"https:\/\/chaotic-ground.github.io\/kakaotalk-on-wine\/%EC%84%A4%EC%B9%98.html","url":"https:\/\/chaotic-ground.github.io\/kakaotalk-on-wine\/%EC%84%A4%EC%B9%98.html","description":"flatpak \ud558\ub098\uc640 GNOME \ud655\uc7a5 \ud558\ub098\uba74 \ub429\ub2c8\ub2e4. root\ub3c4 \uc554\ud638\ub3c4 \ud544\uc694 \uc5c6\uc2b5\ub2c8\ub2e4.","dateModified":"2026-10-08T02:23:39Z","datePublished":"2026-10-08T02:23:39Z","image":[],"author":{"@type":"Organization","name":"\uce74\uce74\uc624\ud1a1 on Wine","url":"https:\/\/chaotic-ground.github.io","logo":[]},"publisher":{"@type":"Organization","name":"\uce74\uce74\uc624\ud1a1 on Wine","url":"https:\/\/chaotic-ground.github.io","logo":[]},"potentialAction":{"@type":"SearchAction","target":"#","query-input":"required name=search_term"}}</script>
+<meta property="article:modified_time" content="2026-10-08T02:28:06Z">
+<meta property="article:published_time" content="2026-10-08T02:28:06Z">
+<script type="application/ld+json">{"@context":"http:\/\/schema.org","@type":"Article","name":"\uc124\uce58 - \uce74\uce74\uc624\ud1a1 on Wine","headline":"\uc124\uce58 - \uce74\uce74\uc624\ud1a1 on Wine","mainEntityOfPage":"\uc124\uce58","identifier":"https:\/\/chaotic-ground.github.io\/kakaotalk-on-wine\/%EC%84%A4%EC%B9%98.html","url":"https:\/\/chaotic-ground.github.io\/kakaotalk-on-wine\/%EC%84%A4%EC%B9%98.html","description":"flatpak \ud558\ub098\uc640 GNOME \ud655\uc7a5 \ud558\ub098\uba74 \ub429\ub2c8\ub2e4. root\ub3c4 \uc554\ud638\ub3c4 \ud544\uc694 \uc5c6\uc2b5\ub2c8\ub2e4.","dateModified":"2026-10-08T02:28:06Z","datePublished":"2026-10-08T02:28:06Z","image":[],"author":{"@type":"Organization","name":"\uce74\uce74\uc624\ud1a1 on Wine","url":"https:\/\/chaotic-ground.github.io","logo":[]},"publisher":{"@type":"Organization","name":"\uce74\uce74\uc624\ud1a1 on Wine","url":"https:\/\/chaotic-ground.github.io","logo":[]},"potentialAction":{"@type":"SearchAction","target":"#","query-input":"required name=search_term"}}</script>
 </head>
 <body class="mediawiki ltr sitedir-ltr mw-hide-empty-elt ns-0 ns-subject mw-editable page-설치 rootpage-설치 skin-monobook action-view skin--responsive">
 <div id="mw-aria-live-region" class="mw-aria-live-region" aria-live="polite"></div><div id="globalWrapper">
@@ -120,6 +120,10 @@ flatpak 설치를 권해줍니다.
 <p>고쳤는데도 같은 자리에서 또 멈춘다면 런처는 다시 시도하지 않습니다. 띄울
 때마다 93MB를 받는 것이 안 뜨는 것보다 나쁘기 때문입니다. 그때는 저장소에
 알려주세요.
+</p><p>고치기 전에 그때의 pak과 업데이터 로그를
+<code>~/.var/app/io.github.chaotic_ground.KakaoTalk/cache/kakaotalk/stuck-update/</code>에
+남깁니다. Wine에서 재현해 고치려면 그것이 있어야 합니다. 저장소에 알려주실
+때 같이 주시면 좋습니다.
 </p>
 <div class="mw-heading mw-heading3"><h3 id="두_번_실행하면_안_되는_이유"><span id=".EB.91.90_.EB.B2.88_.EC.8B.A4.ED.96.89.ED.95.98.EB.A9.B4_.EC.95.88_.EB.90.98.EB.8A.94_.EC.9D.B4.EC.9C.A0"></span>두 번 실행하면 안 되는 이유</h3></div>
 <p>돌고 있는 앱에 <code>flatpak run</code>을 한 번 더 하면 앱이 죽습니다.
@@ -223,7 +227,7 @@ wine 프로세스면 무엇이든 그렇습니다. 인스턴스마다 PID 네임
 			<a href="https://www.mediawiki.org/" class="cdx-button cdx-button--fake-button cdx-button--size-large cdx-button--fake-button--enabled"><picture><source media="(min-width: 500px)" srcset="./assets/img-8a482a3be80b.svg" width="88" height="31"><img src="./assets/img-927df56b7f04.svg" alt="Powered by MediaWiki" lang="en" width="25" height="25" loading="lazy"></picture></a><a href="https://github.com/chaotic-ground/wikven" class="cdx-button cdx-button--fake-button cdx-button--size-large cdx-button--fake-button--enabled"><picture><source media="(min-width: 500px)" srcset="./assets/img-47dbe07cd516.svg" width="88" height="31"><img src="./assets/img-9c8019424ff1.svg" width="25" height="25" alt="Built with wikven" lang="en" loading="lazy"></picture></a>
 		</div>
 		<ul id="f-list">
-			<li id="lastmod"> This page was last edited on 8 October 2026, at 02:23.</li>
+			<li id="lastmod"> This page was last edited on 8 October 2026, at 02:28.</li>
 			<li id="wikven-licenses"><a href="./Licenses.html">Licenses</a></li>
 		</ul>
 	</div>
