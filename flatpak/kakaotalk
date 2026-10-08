@@ -323,8 +323,18 @@ repair_stuck_update() {
   [[ -f $stamp ]] && [[ $(cat "$stamp" 2>/dev/null) == "$installed" ]] && return 0
   step "update is stuck mid-extract; installing the full client"
   printf '%s\n' "$installed" >"$stamp"
-  # 자취까지 치운다. 안 그러면 고친 뒤에도 같은 로그를 보고 또 고치려 든다.
+  # 치우기 전에 챙긴다. 이걸 고치려면 Wine에서 재현해야 하고, 재현하려면
+  # 그때의 pak과 그때 깔려 있던 판이 있어야 한다. 처음 겪었을 때 둘 다
+  # 버리고 나서야 그걸 알았다. 한 벌만 둔다. pak이 33MB쯤 된다.
   local tmp="$PREFIX/drive_c/users/$USER/AppData/Local/Temp"
+  local kept="$CACHE/stuck-update"
+  rm -rf "$kept"
+  mkdir -p "$kept"
+  cp "$tmp"/kakaotalk_*_diff.pak "$tmp"/KakaoUpdate_*.log "$kept/" 2>/dev/null || true
+  find "$tmp/_KakaoTalkUpdate" -printf '%s %p\n' >"$kept/partial.txt" 2>/dev/null || true
+  step "kept the evidence in $kept"
+
+  # 그 다음에 치운다. 안 그러면 고친 뒤에도 같은 로그를 보고 또 고치려 든다.
   rm -rf "$tmp/_KakaoTalkUpdate" "$tmp"/kakaotalk_*_diff.pak "$tmp"/KakaoUpdate_*.log
   mode=reinstall install_client
 }
