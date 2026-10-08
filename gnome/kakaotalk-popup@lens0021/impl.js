@@ -102,6 +102,11 @@ const MENU_GRACE_US = 3 * 1000 * 1000;
 // 우리가 직접 올린 창을 다시 밀어내지 않을 시간. _isStealingList를 보라.
 const RAISE_GRACE_US = 3 * 1000 * 1000;
 
+// 창이 사라진 뒤 이만큼은 트레이 창에 포커스가 와도 앱을 부른 것으로
+// 치지 않는다. 트레이로 닫는 것과 단축키로 부르는 것을 가르는 값이다.
+// 닫는 쪽은 그 자리에서 오고, 단축키는 사람이 누르는 것이라 한참 뒤다.
+const CLOSED_GRACE_US = 2 * 1000 * 1000;
+
 // 재시작은 가는 길에 트레이 창을 없애는데, 그건 복구 대상과 똑같아 보인다.
 // 재시작을 덮을 만큼 길고, 1분 뒤의 두 번째 사고는 여전히 잡을 만큼
 // 짧게.
@@ -308,7 +313,13 @@ export default class KakaoTalkPopup {
             this._hideChrome(window);
             // 이미 떠 있던 창은 _handle을 거치지 않았으므로, 사라질 때
             // 인디케이터에게 말해줄 방법이 없었다.
-            window.connect('unmanaged', () => this._syncIndicatorSoon());
+            window.connect('unmanaged', () => {
+                // 창이 가면 포커스는 남은 창, 곧 숨겨둔 트레이 창으로
+                // 간다. _maybeAskedForApp이 그걸 "앱을 불렀다"로 읽으면
+                // 트레이로 닫는 것이 불가능해진다. 잠깐 문을 닫아둔다.
+                this._intend('closed', CLOSED_GRACE_US);
+                this._syncIndicatorSoon();
+            });
             if (this._classify(window) === 'tray') {
                 this._watchTray(window);
                 // 이 코드가 읽힐 때 이미 떠 있던 창은 _onWindowCreated를
@@ -348,6 +359,32 @@ export default class KakaoTalkPopup {
     //
     // 포커스를 돌려주면 이 핸들러가 다시 불리는데, 이번 대상은 팝업이 아닌
     // 옛 창이다. 그래서 기록하고 멈출 뿐 되튀지 않는다.
+    // Super+4나 대시에서 앱을 부르면 셸은 그 앱의 창 하나에 포커스를
+    // 준다. 트레이로 닫혀 있으면 남은 창이 우리가 숨긴 트레이 창뿐이라,
+    // 셸은 제 할 일을 다 했는데 화면에는 아무 일도 안 일어난다. 눌러도
+    // 안 켜진다는 말이 이것이었다.
+    //
+    // 그래서 숨긴 창에 포커스가 오면 인디케이터를 누른 것으로 친다.
+    // 사용자가 앱을 불렀다는 뜻은 어느 쪽이든 같다.
+    //
+    // 창을 트레이로 닫을 때도 포커스는 그리로 간다. 거기서 되살리면 창을
+    // 닫을 수가 없다. 그래서 창이 막 사라진 직후는 건너뛴다. 닫는 것은
+    // 즉시 오고 단축키는 한참 뒤에 온다.
+    _maybeAskedForApp(focused) {
+        if (this._classify(focused) !== 'tray')
+            return;
+        // 숨겨둔 창일 때만이다. 보이는 트레이 창에 포커스가 온 것은
+        // 사용자가 그걸 눌렀다는 뜻이고, 그건 앱이 알아서 할 일이다.
+        if (focused.get_compositor_private()?.visible !== false)
+            return;
+        if (this._intends('closed') || this._intends('raise') ||
+            this._intends('menu') || this._expectingMenu())
+            return;
+        this._intend('raise', RAISE_GRACE_US);
+        console.log(`${TAG} asked for the app through a hidden window`);
+        this.pokeTray();
+    }
+
     _watchFocus() {
         this._focusId = global.display.connect('notify::focus-window', () => {
             const focused = global.display.focus_window;
@@ -358,6 +395,7 @@ export default class KakaoTalkPopup {
             // 알아봤다.
             if (this._config.log && this._pids?.has(focused.get_pid()))
                 console.log(`${TAG} focus -> ${this._describe(focused)}`);
+            this._maybeAskedForApp(focused);
             if (!this._config.keep_focus)
                 return;
             if (!this._isPopupWindow(focused) && !this._isStealingList(focused)) {
