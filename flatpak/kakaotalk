@@ -295,50 +295,6 @@ install_client() {
   "$SERVER" -w
 }
 
-# 카카오톡의 차분 업데이터가 Wine에서 압축을 풀다 죽는다. 그러면 업데이트
-# 창만 뜨고 클라이언트는 영영 안 온다. 26.8.1에서 26.8.2로 갈 때 그랬고,
-# 판이 바뀔 때마다 다시 날 수 있다. 카카오의 바이너리라 고칠 수가 없다.
-#
-# 자취는 업데이터 자신의 로그에 남는다. 죽으면 마지막 줄이 "Unzip File"이다.
-# 끝까지 간 로그는 그 뒤로 더 적는다. UTF-16이라 iconv를 거친다.
-#
-# 고치는 길은 전체 설치 파일로 덮는 것뿐이다. 차분을 건너뛰므로 같은 데서
-# 걸리지 않는다. AppData는 그대로라 대화는 남고, 실행 파일이 바뀌어서
-# 다시 로그인을 물을 수는 있다.
-stuck_update() {
-  local dir="$PREFIX/drive_c/users/$USER/AppData/Local/Temp"
-  local log
-  log=$(find "$dir" -maxdepth 1 -name 'KakaoUpdate_*.log' -printf '%T@ %p\n' \
-    2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
-  [[ -n $log ]] || return 1
-  iconv -f UTF-16LE -t UTF-8 "$log" 2>/dev/null |
-    grep -v '^[[:space:]]*$' | tail -1 | grep -q 'Unzip File'
-}
-
-# 같은 판에 두 번 매달리지 않는다. 고쳐도 안 되면 93MB를 받는 일이 띄울
-# 때마다 되풀이된다. 그건 안 되는 것보다 나쁘다.
-repair_stuck_update() {
-  local installed stamp="$CACHE/.repaired"
-  installed=$(find "$EXE" -printf '%T@' 2>/dev/null)
-  [[ -f $stamp ]] && [[ $(cat "$stamp" 2>/dev/null) == "$installed" ]] && return 0
-  step "update is stuck mid-extract; installing the full client"
-  printf '%s\n' "$installed" >"$stamp"
-  # 치우기 전에 챙긴다. 이걸 고치려면 Wine에서 재현해야 하고, 재현하려면
-  # 그때의 pak과 그때 깔려 있던 판이 있어야 한다. 처음 겪었을 때 둘 다
-  # 버리고 나서야 그걸 알았다. 한 벌만 둔다. pak이 33MB쯤 된다.
-  local tmp="$PREFIX/drive_c/users/$USER/AppData/Local/Temp"
-  local kept="$CACHE/stuck-update"
-  rm -rf "$kept"
-  mkdir -p "$kept"
-  cp "$tmp"/kakaotalk_*_diff.pak "$tmp"/KakaoUpdate_*.log "$kept/" 2>/dev/null || true
-  find "$tmp/_KakaoTalkUpdate" -printf '%s %p\n' >"$kept/partial.txt" 2>/dev/null || true
-  step "kept the evidence in $kept"
-
-  # 그 다음에 치운다. 안 그러면 고친 뒤에도 같은 로그를 보고 또 고치려 든다.
-  rm -rf "$tmp/_KakaoTalkUpdate" "$tmp"/kakaotalk_*_diff.pak "$tmp"/KakaoUpdate_*.log
-  mode=reinstall install_client
-}
-
 # GNOME이 alt-tab과 오버뷰에 그리는 아이콘. 배포하는 게 아니라 클라이언트
 # 에서 꺼낸다. 그림은 카카오의 것이다. Wine이 왜 이걸 못 주는지는
 # flatpak/extract-icon.py에 있다.
@@ -383,10 +339,6 @@ setup() {
 # 하는 게 맞다.
 if [[ $mode == reinstall ]] || [[ ! -f $EXE ]]; then
   setup
-# 지난번에 띄웠을 때 업데이트가 압축을 풀다 죽었으면 여기서 고친다. 묻지
-# 않는다. 물어봐야 할 수 있는 답이 하나뿐이고, 그동안 앱은 안 뜬다.
-elif stuck_update; then
-  repair_stuck_update
 fi
 
 [[ $mode == setup ]] && exit 0
@@ -476,13 +428,51 @@ serve_control() {
 # 쪽보다 늦게 돌면 방금 띄운 창이 그대로 사라진다. 두 쪽이 순서대로 도는
 # 것처럼 보이지만, 바깥의 호출자가 기다리는 것은 클라이언트가 사라지는
 # 것이지 런처가 끝나는 것이 아니다.
+# 프리픽스 안에서 도는 것 중 이 이름이 있는지. 같은 인스턴스 안에서만
+# 물어야 한다. 두 번째 인스턴스의 tasklist는 세션을 데리고 내려간다.
+running_in_prefix() {
+  timeout 20 "$WINE" tasklist 2>/dev/null | grep -qi "$1"
+}
+
 cleanup() {
   kill "$CONTROL_PID" 2>/dev/null || true
   rm -f "$CONTROL"
-  if timeout 20 "$WINE" tasklist 2>/dev/null | grep -qi 'KakaoTalk.exe'; then
+  # 업데이터도 봐야 한다. 이걸 빠뜨려서 압축을 풀던 KakaoUpdate.exe가
+  # -k에 죽었고, 카카오톡은 판이 올라갈 때마다 업데이트 창만 띄우고
+  # 영영 안 떴다.
+  if running_in_prefix 'KakaoTalk.exe' || running_in_prefix 'KakaoUpdate.exe'; then
     return
   fi
   timeout 20 "$SERVER" -k >/dev/null 2>&1 || true
+}
+
+# 카카오톡은 자기 파일을 바꾸려고 업데이트할 때 일부러 먼저 끝난다. 그
+# 뒤를 KakaoUpdate.exe가 잇고, 다 되면 새 클라이언트를 자기가 띄운다
+# (로그의 CreateProcess ... "BYUPDATE"). 그러니 wine이 돌아왔다고 해서
+# 일이 끝난 것이 아니다.
+#
+# 여기서 그냥 나가면 트랩이 돌고, 위의 방어를 지나더라도 serve_control이
+# 죽어서 --show와 --quit이 새 클라이언트에 닿지 않는다. 업데이트가 끝나고
+# 새 클라이언트가 설 때까지 기다렸다가, 그것이 사는 동안 자리를 지킨다.
+#
+# 33MB짜리 pak을 푸는 데 20초쯤 걸렸다. 10분은 넉넉하다. 그 안에 안
+# 끝나면 들고 있어봐야 소용없으니 평소대로 정리하고 나간다.
+await_update() {
+  running_in_prefix 'KakaoUpdate.exe' || return 0
+  step "an update is running; waiting for it to finish"
+  local i
+  for ((i = 0; i < 120; i++)); do
+    running_in_prefix 'KakaoUpdate.exe' || break
+    sleep 5
+  done
+  # 업데이터가 띄운 새 클라이언트. 뜨는 데 잠깐 걸린다.
+  for ((i = 0; i < 6; i++)); do
+    running_in_prefix 'KakaoTalk.exe' && break
+    sleep 5
+  done
+  while running_in_prefix 'KakaoTalk.exe'; do
+    sleep 5
+  done
 }
 
 serve_control &
@@ -490,3 +480,4 @@ readonly CONTROL_PID=$!
 trap cleanup EXIT INT TERM HUP
 
 "$WINE" "$EXE"
+await_update
