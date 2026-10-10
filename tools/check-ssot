@@ -38,5 +38,20 @@ elif [[ $in_manifest != "$release" ]]; then
   say "bundle.yml 의 RELEASE($release) 와 매니페스트의 릴리스($in_manifest)가 다르다"
 fi
 
+# 4. Wine을 짓는 쪽도 같은 릴리스를 봐야 한다. wine.yml이 자산을 올리고
+#    bundle.yml이 그것을 읽는다. 그리고 그 릴리스 이름 안에 Wine 버전이
+#    들어 있어서, 버전만 올리고 이름을 두면 11.18짜리 자산 자리에 11.19가
+#    올라간다.
+wine_release=$(sed -n 's/^  RELEASE: //p' .github/workflows/wine.yml)
+wine_version=$(sed -n "s/^  WINE_VERSION: '\(.*\)'$/\1/p" .github/workflows/wine.yml)
+if [[ -z $wine_release || -z $wine_version ]]; then
+  say "wine.yml: RELEASE 나 WINE_VERSION 을 못 찾았다"
+else
+  [[ $wine_release == "$release" ]] ||
+    say "wine.yml 의 RELEASE($wine_release) 와 bundle.yml 의 것($release)이 다르다"
+  [[ $wine_release == wine-"$wine_version"-* ]] ||
+    say "wine.yml: RELEASE($wine_release) 에 WINE_VERSION($wine_version) 이 없다"
+fi
+
 [[ $fail == 0 ]] && echo "ssot: 어긋난 곳 없음"
 exit "$fail"

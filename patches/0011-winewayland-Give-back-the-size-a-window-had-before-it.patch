@@ -1,0 +1,58 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: lens0021 <lorentz0021@gmail.com>
+Date: Fri, 9 Oct 2026 07:10:00 +0900
+Subject: [PATCH] winewayland: Give back the size a window had before it was
+ maximized
+
+Unmaximizing a window did nothing. The window stayed at the size it had
+while maximized, and the compositor kept resending the same configure.
+
+The configure that drops the maximized state carries a size, but a
+configure without a state that demands strict size adherence is only a
+hint, so the driver throws the size away. What is left is a style bit
+flipped by hand, WS_MAXIMIZE cleared with no resize, and nothing that
+remembers how big the window used to be.
+
+Win32 remembers. The normal placement is saved when the window is
+maximized, and SC_RESTORE puts it back. The minimize case right above
+this one already works that way.
+---
+ dlls/winewayland.drv/window.c | 26 ++++++++++++++++++++++++++
+ 1 file changed, 26 insertions(+)
+
+diff --git a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
+--- a/dlls/winewayland.drv/window.c
++++ b/dlls/winewayland.drv/window.c
+@@ -600,6 +600,32 @@ static void wayland_configure_window(HWND hwnd)
+         return;
+     }
+ 
++    /* The same thing one state down: the compositor has taken the window out
++     * of the maximized state. That configure carries a size, but without a
++     * state that demands strict adherence it is only a hint, and the code
++     * above has already dropped it. Clearing WS_MAXIMIZE by hand, as the code
++     * below does, leaves the window at the size it had while maximized and
++     * nothing is left that remembers how big it used to be. The window never
++     * comes back and the compositor keeps resending the same configure.
++     *
++     * Win32 does remember: the normal placement saved when the window was
++     * maximized. Ack the configure and send SC_RESTORE so that placement is
++     * put back, which starts a fresh configure cycle. */
++    style = NtUserGetWindowLongW(hwnd, GWL_STYLE);
++    if (!(state & (WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED |
++                   WAYLAND_SURFACE_CONFIG_STATE_FULLSCREEN)) &&
++        (style & WS_MAXIMIZE) && !(style & WS_MINIMIZE))
++    {
++        TRACE("hwnd=%p restoring from maximize\n", hwnd);
++        surface->current = surface->processing;
++        memset(&surface->processing, 0, sizeof(surface->processing));
++        xdg_surface_ack_configure(surface->xdg_surface,
++                                  surface->current.serial);
++        wayland_win_data_release(data);
++        send_message(hwnd, WM_SYSCOMMAND, SC_RESTORE, 0);
++        return;
++    }
++
+     SetRect(&rect, 0, 0, width, height);
+     rect = map_rect_from_surface(surface, rect);
+     OffsetRect(&rect, data->rects.window.left, data->rects.window.top);

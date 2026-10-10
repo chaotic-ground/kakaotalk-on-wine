@@ -9,9 +9,9 @@ name: Bundle
 # 모든 것을 릴리스 자산에서 URL과 체크섬으로 가져온다. 여기서 빌드가
 # 가능한 이유가 그것이다.
 #
-# 그래서 Wine은 여기서 빌드하지 않는다. Wine은 크로스 컴파일러가 필요한
-# 40분짜리 작업이고 patches/가 바뀔 때만 바뀐다. 손으로 자기 자산으로
-# 올리고, 매니페스트의 체크섬이 둘을 묶는다. patches/README.md를 보라.
+# 그래서 Wine은 여기서 빌드하지 않는다. patches/가 바뀔 때만 바뀌는 긴
+# 작업이고 wine.yml이 따로 맡는다. 거기서 나온 tarball을 릴리스 자산으로
+# 올리고 매니페스트의 체크섬이 둘을 묶는다. patches/README.md를 보라.
 on:
   push:
     branches: [main]
