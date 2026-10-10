@@ -27,9 +27,9 @@ RLPAGEMODULES=[];</script>
 <meta property="og:site_name" content="카카오톡 on Wine">
 <meta property="og:url" content="https://chaotic-ground.github.io/kakaotalk-on-wine/%ED%8C%A8%EC%B9%98/0012.html">
 <meta property="og:description" content="Super + 왼쪽이나 오른쪽을 한 번 쓰면 그 창은 영영 크기가 안 바뀜">
-<meta property="article:modified_time" content="2026-10-10T13:34:31Z">
-<meta property="article:published_time" content="2026-10-10T13:34:31Z">
-<script type="application/ld+json">{"@context":"http:\/\/schema.org","@type":"Article","name":"0012 \ud0c0\uc77c\ud55c \ucc3d\uc774 \uc6d0\ub798 \ud06c\uae30\ub85c \ub3cc\uc544\uc624\uc9c0 \uc54a\uc74c - \uce74\uce74\uc624\ud1a1 on Wine","headline":"0012 \ud0c0\uc77c\ud55c \ucc3d\uc774 \uc6d0\ub798 \ud06c\uae30\ub85c \ub3cc\uc544\uc624\uc9c0 \uc54a\uc74c - \uce74\uce74\uc624\ud1a1 on Wine","mainEntityOfPage":"0012 \ud0c0\uc77c\ud55c \ucc3d\uc774 \uc6d0\ub798 \ud06c\uae30\ub85c \ub3cc\uc544\uc624\uc9c0 \uc54a\uc74c","identifier":"https:\/\/chaotic-ground.github.io\/kakaotalk-on-wine\/%ED%8C%A8%EC%B9%98\/0012.html","url":"https:\/\/chaotic-ground.github.io\/kakaotalk-on-wine\/%ED%8C%A8%EC%B9%98\/0012.html","description":"Super + \uc67c\ucabd\uc774\ub098 \uc624\ub978\ucabd\uc744 \ud55c \ubc88 \uc4f0\uba74 \uadf8 \ucc3d\uc740 \uc601\uc601 \ud06c\uae30\uac00 \uc548 \ubc14\ub01c","dateModified":"2026-10-10T13:34:31Z","datePublished":"2026-10-10T13:34:31Z","image":[],"author":{"@type":"Organization","name":"\uce74\uce74\uc624\ud1a1 on Wine","url":"https:\/\/chaotic-ground.github.io","logo":[]},"publisher":{"@type":"Organization","name":"\uce74\uce74\uc624\ud1a1 on Wine","url":"https:\/\/chaotic-ground.github.io","logo":[]},"potentialAction":{"@type":"SearchAction","target":"#","query-input":"required name=search_term"}}</script>
+<meta property="article:modified_time" content="2026-10-10T16:23:21Z">
+<meta property="article:published_time" content="2026-10-10T16:23:21Z">
+<script type="application/ld+json">{"@context":"http:\/\/schema.org","@type":"Article","name":"0012 \ud0c0\uc77c\ud55c \ucc3d\uc774 \uc6d0\ub798 \ud06c\uae30\ub85c \ub3cc\uc544\uc624\uc9c0 \uc54a\uc74c - \uce74\uce74\uc624\ud1a1 on Wine","headline":"0012 \ud0c0\uc77c\ud55c \ucc3d\uc774 \uc6d0\ub798 \ud06c\uae30\ub85c \ub3cc\uc544\uc624\uc9c0 \uc54a\uc74c - \uce74\uce74\uc624\ud1a1 on Wine","mainEntityOfPage":"0012 \ud0c0\uc77c\ud55c \ucc3d\uc774 \uc6d0\ub798 \ud06c\uae30\ub85c \ub3cc\uc544\uc624\uc9c0 \uc54a\uc74c","identifier":"https:\/\/chaotic-ground.github.io\/kakaotalk-on-wine\/%ED%8C%A8%EC%B9%98\/0012.html","url":"https:\/\/chaotic-ground.github.io\/kakaotalk-on-wine\/%ED%8C%A8%EC%B9%98\/0012.html","description":"Super + \uc67c\ucabd\uc774\ub098 \uc624\ub978\ucabd\uc744 \ud55c \ubc88 \uc4f0\uba74 \uadf8 \ucc3d\uc740 \uc601\uc601 \ud06c\uae30\uac00 \uc548 \ubc14\ub01c","dateModified":"2026-10-10T16:23:21Z","datePublished":"2026-10-10T16:23:21Z","image":[],"author":{"@type":"Organization","name":"\uce74\uce74\uc624\ud1a1 on Wine","url":"https:\/\/chaotic-ground.github.io","logo":[]},"publisher":{"@type":"Organization","name":"\uce74\uce74\uc624\ud1a1 on Wine","url":"https:\/\/chaotic-ground.github.io","logo":[]},"potentialAction":{"@type":"SearchAction","target":"#","query-input":"required name=search_term"}}</script>
 </head>
 <body class="mediawiki ltr sitedir-ltr mw-hide-empty-elt ns-0 ns-subject mw-editable page-패치_0012 rootpage-패치_0012 skin-monobook action-view skin--responsive">
 <div id="mw-aria-live-region" class="mw-aria-live-region" aria-live="polite"></div><div id="globalWrapper">
@@ -155,6 +155,16 @@ xdg_toplevel_handle_configure hwnd=0x900e8 960x1048,0     ← 그 뒤로 계속
 <span class="p">}</span>
 </pre></div>
 <p>0011과 마찬가지로 최소화된 창은 건드리지 않습니다.
+</p><p>크기는 돌아오지만 위치는 돌아오지 않습니다. 타일을 풀면 창은 타일돼 있던
+화면 가장자리에 붙은 채로 원래 크기를 되찾습니다. 이건 더 고칠 수 없습니다.
+xdg-shell에는 창이 좌표를 넣어 스스로 움직이는 요청이 없기 때문입니다.
+드라이버에서 toplevel을 움직이는 호출은 <code>xdg_toplevel_move</code>
+하나뿐인데, 사용자가 제목 표시줄을 눌러 시작하는 대화형 드래그라서 좌석과
+버튼 시리얼이 있어야 합니다. 좌표를 넣는 <code>set_position</code>은
+서브서피스에만 있고 toplevel에는 없습니다. 창을 어디에 놓을지는 컴포지터가
+정합니다. Win32 쪽 사각형만 옛 위치로 옮기면 화면에 보이는 자리는 그대로인데
+내부 좌표만 어긋나서 마우스가 엉뚱한 곳을 가리키게 됩니다. 타일 전 위치를
+기억해줘야 할 쪽은 뮤터입니다.
 </p>
 </div>
 <div class="printfooter" data-nosnippet="">Retrieved from "<a dir="ltr" href="https://chaotic-ground.github.io/kakaotalk-on-wine/패치/0012.html">https://chaotic-ground.github.io/kakaotalk-on-wine/패치/0012.html</a>"</div></div>
@@ -251,7 +261,7 @@ xdg_toplevel_handle_configure hwnd=0x900e8 960x1048,0     ← 그 뒤로 계속
 			<a href="https://www.mediawiki.org/" class="cdx-button cdx-button--fake-button cdx-button--size-large cdx-button--fake-button--enabled"><picture><source media="(min-width: 500px)" srcset="../assets/img-8a482a3be80b.svg" width="88" height="31"><img src="../assets/img-927df56b7f04.svg" alt="Powered by MediaWiki" lang="en" width="25" height="25" loading="lazy"></picture></a><a href="https://github.com/chaotic-ground/wikven" class="cdx-button cdx-button--fake-button cdx-button--size-large cdx-button--fake-button--enabled"><picture><source media="(min-width: 500px)" srcset="../assets/img-47dbe07cd516.svg" width="88" height="31"><img src="../assets/img-9c8019424ff1.svg" width="25" height="25" alt="Built with wikven" lang="en" loading="lazy"></picture></a>
 		</div>
 		<ul id="f-list">
-			<li id="lastmod"> This page was last edited on 10 October 2026, at 13:34.</li>
+			<li id="lastmod"> This page was last edited on 10 October 2026, at 16:23.</li>
 			<li id="wikven-licenses"><a href="../Licenses.html">Licenses</a></li>
 		</ul>
 	</div>
