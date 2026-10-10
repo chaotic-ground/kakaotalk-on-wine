@@ -18,7 +18,8 @@ on:
   push:
     branches: [main]
     paths:
-      - 'patches/**'
+      # README는 빼야 한다. 글을 고쳤다고 한 시간을 짓지 않는다.
+      - 'patches/*.patch'
       - '.github/workflows/wine.yml'
   workflow_dispatch:
     inputs:
