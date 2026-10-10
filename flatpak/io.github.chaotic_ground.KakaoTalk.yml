@@ -102,7 +102,7 @@ modules:
       - type: archive
         strip-components: 0
         url: https://github.com/chaotic-ground/kakaotalk-on-wine/releases/download/wine-11.18-emoji/wine-11.18-emoji-wow64-x86_64.tar.xz
-        sha256: 876a7d6f3d00938b89fb52a9f689cd47f6fce93c4c41457b65fde4ed2a895487
+        sha256: 8043b0f710cf4481dfffd7762f9bd80a3d0f40c8ceca9990264da0f096dfb4f8
 
   # 프리픽스가 없으면 안 되는 두 face. 호스트에서 가져오지 않고 번들로
   # 넣는다. 한국어 글꼴이 없는 프리픽스는 한글 글리프를 전부 네모로 그리고,
