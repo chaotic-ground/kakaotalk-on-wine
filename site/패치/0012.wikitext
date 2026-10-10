@@ -1,0 +1,122 @@
+{{DISPLAYTITLE:0012 타일한 창이 원래 크기로 돌아오지 않음}}
+{{패치
+|번호=0012
+|증상=Super + 왼쪽이나 오른쪽을 한 번 쓰면 그 창은 영영 크기가 안 바뀜
+|파일=<code>winewayland.drv/window.c</code>, <code>winewayland.drv/waylanddrv.h</code>
+|업스트림=안 냈습니다
+|패치=0012-winewayland-Remember-the-size-a-window-had-before-it-.patch
+}}
+[[패치/0011|0011]]과 한 칸 옆에 있는 같은 종류의 구멍입니다. Super +
+오른쪽으로 창을 화면 반쪽에 붙였다가 Super + 아래로 풀면, GNOME은 타일을
+푼 것으로 알고 창은 타일된 크기 그대로 남습니다. 그 크기가 화면 가장자리에
+딱 붙어 있어서, 크기를 조절하려고 변을 잡으려 해도 잡을 자리가 없습니다.
+포인터 모양도 안 바뀝니다.
+
+추적을 켜고 대화 창 하나에 Super + 오른쪽, Super + 아래를 차례로 눌러보면
+이렇게 나옵니다.
+
+<syntaxhighlight lang="text">
+xdg_toplevel_handle_configure hwnd=0x900e8 570x960,0      ← 평소
+xdg_toplevel_handle_configure hwnd=0x900e8 960x1048,0x4   ← Super + 오른쪽
+xdg_toplevel_handle_configure hwnd=0x900e8 0x0,0          ← Super + 아래
+xdg_toplevel_handle_configure hwnd=0x900e8 960x1048,0     ← 그 뒤로 계속
+</syntaxhighlight>
+
+<code>0x4</code>가 <code>WAYLAND_SURFACE_CONFIG_STATE_TILED</code>입니다.
+타일에서 나올 때 컴포지터가 보내는 것은 <code>0x0</code>에 상태 없음,
+"크기는 네가 정해라"입니다. 그런데 창이 아는 크기는 타일이 강요한
+<code>960x1048</code> 하나뿐이라 그 값을 도로 내밉니다.
+
+드라이버가 타일 상태를 모르는 것은 아닙니다. 크기를 얼마나 엄격하게
+지킬지 고를 때는 봅니다.
+
+<syntaxhighlight lang="c">
+/* The Wayland maximized and fullscreen states are very strict about
+ * surface size, so don't let the application override it. The tiled state
+ * is not as strict, but it indicates a strong size preference, so try to
+ * respect it. */
+if (state & (WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED |
+             WAYLAND_SURFACE_CONFIG_STATE_FULLSCREEN |
+             WAYLAND_SURFACE_CONFIG_STATE_TILED))
+{
+    flags |= SWP_NOSENDCHANGING;
+}
+</syntaxhighlight>
+
+그런데 <code>WS_MAXIMIZE</code>를 켜고 끄는 줄은 최대화만 봅니다.
+
+<syntaxhighlight lang="c">
+if (!(state & WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED) != !(style & WS_MAXIMIZE)
+    && !(state & WAYLAND_SURFACE_CONFIG_STATE_FULLSCREEN))
+    NtUserSetWindowLong(hwnd, GWL_STYLE, style ^ WS_MAXIMIZE, FALSE);
+</syntaxhighlight>
+
+이게 0011의 수법을 그대로 쓸 수 없는 이유입니다. 타일로 들어갈 때 Win32
+쪽에는 아무 표시도 남지 않습니다. 실제로 타일된 창의 스타일을 찍어보면
+<code>0x960f0000</code>으로, <code>WS_MAXIMIZE</code>(<code>0x01000000</code>)가
+없습니다. 저장된 normal placement가 없으니 <code>SC_RESTORE</code>를 보내도
+되돌릴 것이 없습니다.
+
+맞는 비유는 최대화가 아니라 윈도의 스냅입니다. 스냅된 창도
+<code>WS_MAXIMIZE</code>를 달지 않고, 스냅 직전 크기는 창이 아니라 셸이
+기억합니다. 여기서도 같이 했습니다. 기억할 곳이 없으니 드라이버가
+기억합니다.
+
+<syntaxhighlight lang="c">
+BOOL tiled;
+RECT tiled_rect;
+</syntaxhighlight>
+
+타일 상태가 들어오면 그 직전의 창 사각형을 적어두고, 타일 상태가 나가면
+돌려줍니다.
+
+<syntaxhighlight lang="c">
+else if ((state & WAYLAND_SURFACE_CONFIG_STATE_TILED) && !data->tiled)
+{
+    data->tiled = TRUE;
+    data->tiled_rect = data->rects.window;
+}
+else if (!(state & WAYLAND_SURFACE_CONFIG_STATE_TILED) && data->tiled)
+{
+    data->tiled = FALSE;
+    restoring_from_tiled = !(style & (WS_MAXIMIZE | WS_MINIMIZE)) &&
+                           !IsRectEmpty(&data->tiled_rect);
+}
+</syntaxhighlight>
+
+적어둔 것은 이미 창 사각형이라 <code>map_rect_from_surface</code>를 다시
+통과시키면 안 됩니다. 매핑이 끝난 뒤에 통째로 갈아끼웁니다. 쓰이는 것은
+크기뿐입니다. 다른 모든 configure와 마찬가지로 아래에서
+<code>SWP_NOMOVE</code>가 붙기 때문입니다.
+
+<syntaxhighlight lang="c">
+SetRect(&rect, 0, 0, width, height);
+rect = map_rect_from_surface(surface, rect);
+OffsetRect(&rect, data->rects.window.left, data->rects.window.top);
+
+if (restoring_from_tiled)
+{
+    TRACE("hwnd=%p restoring from tiled\n", hwnd);
+    rect = data->tiled_rect;
+}
+</syntaxhighlight>
+
+순서가 중요합니다. 갈아끼우기는 <code>SWP_NOSIZE</code>를 붙일지 정하는
+줄보다 앞에 있어야 합니다. 타일 해제 configure는 크기가 <code>0x0</code>이라
+그대로 두면 빈 사각형이 되고, <code>SWP_NOSIZE</code>가 붙어 아무것도
+안 하게 됩니다.
+
+최대화와 전체화면은 0011이 맡으므로 여기서는 비켜섭니다. 컴포지터가
+최대화된 창을 네 변 모두 타일됐다고 부를 수도 있어서, 그 경우 최대화된
+사각형을 "돌아갈 크기"로 적어두지 않도록 기억을 지웁니다.
+
+<syntaxhighlight lang="c">
+if (state & (WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED |
+             WAYLAND_SURFACE_CONFIG_STATE_FULLSCREEN))
+{
+    data->tiled = FALSE;
+    SetRectEmpty(&data->tiled_rect);
+}
+</syntaxhighlight>
+
+0011과 마찬가지로 최소화된 창은 건드리지 않습니다.

@@ -1,0 +1,102 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: lens0021 <lorentz0021@gmail.com>
+Date: Sat, 10 Oct 2026 22:40:00 +0900
+Subject: [PATCH] winewayland: Remember the size a window had before it was
+ tiled
+
+Tiling a window to half the screen and then untiling it left the window
+at the tiled size for good, pressed against the screen edge it had been
+tiled to, where the edge that would resize it could not be grabbed.
+
+Half-tiling is not maximizing, in Wayland or in Windows, and Win32 has
+no style bit for it. So nothing saves a normal placement on the way in,
+and the SC_RESTORE used one state up has nothing to put back on the way
+out. The configure that drops the tiled state carries no size at all,
+which means the window is free to choose again, but by then the only
+size the window has left is the one tiling forced on it.
+
+Nobody else remembers, so remember in the driver: keep the window rect
+when the tiled state arrives, give it back when the tiled state leaves.
+---
+ dlls/winewayland.drv/waylanddrv.h |  4 ++++
+ dlls/winewayland.drv/window.c     | 43 +++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 47 insertions(+)
+
+diff --git a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv.h
+--- a/dlls/winewayland.drv/waylanddrv.h
++++ b/dlls/winewayland.drv/waylanddrv.h
+@@ -422,6 +422,10 @@ struct wayland_win_data
+     BOOL resizeable;
+     BOOL managed;
+     BOOL layered_attribs_set;
++    /* whether the compositor currently has the window tiled, and the window
++     * rect it had before it was tiled */
++    BOOL tiled;
++    RECT tiled_rect;
+ };
+ 
+ struct wayland_win_data *wayland_win_data_get(HWND hwnd);
+diff --git a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
+--- a/dlls/winewayland.drv/window.c
++++ b/dlls/winewayland.drv/window.c
+@@ -505,6 +505,7 @@ static void wayland_configure_window(HWND hwnd)
+     BOOL needs_enter_size_move = FALSE;
+     BOOL needs_exit_size_move = FALSE;
+     BOOL restoring_from_minimize = FALSE;
++    BOOL restoring_from_tiled = FALSE;
+     struct wayland_win_data *data;
+     RECT rect, surface_rect;
+ 
+@@ -626,10 +627,52 @@ static void wayland_configure_window(HWND hwnd)
+         return;
+     }
+ 
++    /* One state further out: tiling. Half-tiling a window is not maximizing
++     * it, in Wayland or in Windows, and Win32 has no style bit for it. So
++     * nothing saves a normal placement on the way in, and SC_RESTORE has
++     * nothing to put back on the way out. The configure that drops the tiled
++     * state carries no size at all, which means the window is free to choose
++     * again, but the only size the window has left is the one tiling forced
++     * on it. It keeps that size for good, pressed against the screen edge it
++     * was tiled to, where the edge that would resize it cannot be grabbed.
++     *
++     * Nobody else remembers, so remember here. Keep the window rect when the
++     * tiled state arrives and give it back when the tiled state leaves. */
++    if (state & (WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED |
++                 WAYLAND_SURFACE_CONFIG_STATE_FULLSCREEN))
++    {
++        /* Those two have a path of their own, above. A compositor is
++         * free to call a maximized window tiled on all four edges, so say
++         * nothing was tiled rather than save a maximized rect as the one to
++         * come back to. */
++        data->tiled = FALSE;
++        SetRectEmpty(&data->tiled_rect);
++    }
++    else if ((state & WAYLAND_SURFACE_CONFIG_STATE_TILED) && !data->tiled)
++    {
++        data->tiled = TRUE;
++        data->tiled_rect = data->rects.window;
++    }
++    else if (!(state & WAYLAND_SURFACE_CONFIG_STATE_TILED) && data->tiled)
++    {
++        data->tiled = FALSE;
++        restoring_from_tiled = !(style & (WS_MAXIMIZE | WS_MINIMIZE)) &&
++                               !IsRectEmpty(&data->tiled_rect);
++    }
++
+     SetRect(&rect, 0, 0, width, height);
+     rect = map_rect_from_surface(surface, rect);
+     OffsetRect(&rect, data->rects.window.left, data->rects.window.top);
+ 
++    /* The saved rect is already a window rect, so it goes in whole, after the
++     * mapping rather than through it. Only its size is used: SWP_NOMOVE is
++     * set below, as it is for every other configure. */
++    if (restoring_from_tiled)
++    {
++        TRACE("hwnd=%p restoring from tiled\n", hwnd);
++        rect = data->tiled_rect;
++    }
++
+     wayland_win_data_release(data);
+ 
+     TRACE("processing=%dx%d,%#x\n", width, height, state);
