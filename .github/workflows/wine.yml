@@ -42,6 +42,12 @@ jobs:
     runs-on: ubuntu-latest
     container: ${{ matrix.image }}
     timeout-minutes: 300
+    # 컨테이너 안에서는 기본 셸이 sh다. 우분투의 sh는 dash라
+    # set -o pipefail을 모른다. 페도라의 sh는 bash라서 그냥
+    # 지나갔다.
+    defaults:
+      run:
+        shell: bash
     permissions:
       contents: write  # gh release upload
     strategy:
@@ -198,6 +204,9 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # gh는 저장소 이름을 git에게 묻는데, 컨테이너 안에서는
+          # 체크아웃한 디렉터리의 주인이 달라 git이 거절한다.
+          GH_REPO: ${{ github.repository }}
         run: |
           gh release download "$RELEASE" \
             -p "$RELEASE-wow64-x86_64.tar.xz" -D published
@@ -224,5 +233,6 @@ jobs:
         if: inputs.publish && matrix.publishes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           gh release upload "$RELEASE" "$RELEASE-wow64-x86_64.tar.xz" --clobber
