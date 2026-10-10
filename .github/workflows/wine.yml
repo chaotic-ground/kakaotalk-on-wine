@@ -51,15 +51,20 @@ jobs:
           - base: dnf
             image: fedora:43
             publishes: true
+          # 26.04가 아니다. 거기서는 apt-get build-dep wine이 풀리지
+          # 않는다. 우분투의 wine 10.0 소스가 unicode-cldr-core (< 47)을
+          # 요구하는데 26.04에는 그보다 새것만 있다.
           - base: apt
-            image: ubuntu:26.04
+            image: ubuntu:24.04
             publishes: false
     steps:
       # 컨테이너가 비어 있다. checkout은 git이 없으면 조용히 REST로
       # 내려받고, gh는 자산을 읽고 쓸 때 쓴다.
       - name: Install the tools the runner assumes (dnf)
         if: matrix.base == 'dnf'
-        run: dnf install -y --setopt=install_weak_deps=False git-core gh tar xz
+        run: |
+          dnf install -y --setopt=install_weak_deps=False \
+            git-core gh tar xz file
 
       - name: Install the tools the runner assumes (apt)
         if: matrix.base == 'apt'
@@ -68,7 +73,7 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            ca-certificates curl git gh tar xz-utils
+            ca-certificates curl file git gh tar xz-utils
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -141,10 +146,13 @@ jobs:
           make install
 
       # 위의 configure 검사를 빠져나가는 길이 있을 수 있다. 나온 것을 본다.
+      # unix 쪽은 64비트 하나뿐이다. 새 WoW64에서 32비트는 PE로만 나오고
+      # i386-unix는 아예 없다. patches/README.md의 32비트 이야기가 그것이다.
       - name: Check the driver came out
         run: |
           test -f "$RELEASE/lib/wine/x86_64-unix/winewayland.so"
-          test -f "$RELEASE/lib/wine/i386-unix/winewayland.so"
+          test -f "$RELEASE/lib/wine/x86_64-windows/winewayland.drv"
+          test -f "$RELEASE/lib/wine/i386-windows/winewayland.drv"
 
       # 안 하면 1.7GB, 하면 499MB다. PE 모듈은 자기 아키텍처의 strip으로
       # 해야 한다.
@@ -154,9 +162,18 @@ jobs:
             -exec x86_64-w64-mingw32-strip {} +
           find "$RELEASE/lib/wine/i386-windows" -type f \
             -exec i686-w64-mingw32-strip {} +
-          find "$RELEASE/bin" "$RELEASE/lib/wine/x86_64-unix" \
-            "$RELEASE/lib/wine/i386-unix" -type f \
-            -exec strip {} +
+          # bin/ 에는 ELF가 아닌 것도 있다. winegcc 같은 셸 스크립트와
+          # function_grep.pl이다. strip에 그것들을 같이 넘기면 단계가
+          # 통째로 떨어진다.
+          find "$RELEASE/bin" "$RELEASE/lib/wine/x86_64-unix" -type f \
+            -exec sh -c '
+              for f; do
+                case $(file -b --mime-type "$f") in
+                  application/x-*executable|application/x-sharedlib)
+                    strip "$f" ;;
+                esac
+              done
+            ' _ {} +
 
       # import 라이브러리와 헤더는 Wine으로 빌드할 때 쓰는 것이지 실행할 때
       # 쓰는 것이 아니다. 499MB와 배포되는 379MB의 차이가 이것이다.
