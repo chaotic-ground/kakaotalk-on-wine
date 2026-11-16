@@ -436,6 +436,9 @@ running_in_prefix() {
 
 cleanup() {
   kill "$CONTROL_PID" 2>/dev/null || true
+  # reap_half_dead도 배경에 있다. 남기면 위와 같은 이유로 인스턴스가 안
+  # 닫힌다.
+  [[ -n ${REAPER_PID:-} ]] && kill "$REAPER_PID" 2>/dev/null
   rm -f "$CONTROL"
   # 업데이터도 봐야 한다. 이걸 빠뜨려서 압축을 풀던 KakaoUpdate.exe가
   # -k에 죽었고, 카카오톡은 판이 올라갈 때마다 업데이트 창만 띄우고
@@ -475,9 +478,52 @@ await_update() {
   done
 }
 
+# 클라이언트가 반쯤 죽은 채 남지 않게 한다. 메인 스레드는 끝났는데 다른
+# 스레드가 futex에서 영영 기다리는 상태가 있다. ps로는 Zl이다. 프로세스
+# 그룹이 다 끝나지 않았으므로 wait도 돌아오지 않고, 인스턴스 전체가 그대로
+# 남는다. 창은 하나도 없다.
+#
+# 남는 것만으로 그치지 않는다. 그 프로세스는 컴포지터와의 Wayland 연결을
+# 연 채로 아무것도 읽지 않는다. 키맵이 바뀔 때마다(한영 전환, 잠금 해제)
+# 컴포지터는 모든 클라이언트에 키맵 fd를 하나씩 보내고, 여기서는 그게 읽히지
+# 않고 쌓인다. 커널은 사용자마다 전송 중인 fd 수를 보내는 쪽의 열린 파일
+# 한도로 막는데, 기본 1024다. 그 선을 넘는 순간 fd를 넘기려던 사용자
+# dbus-broker가 ETOOMANYREFS로 죽고 GNOME 세션이 통째로 로그아웃된다.
+# 하루 이틀이면 넘는다. 2026-11-09와 11-13에 그렇게 두 번 로그아웃됐고,
+# 두 번 다 그 전에 카카오톡을 연달아 눌러 실행한 기록이 있었다.
+#
+# 이렇게 되는 경로는 하나만 봤다. 백신이 프리픽스 안의 파일을 격리한 채로
+# 실행했을 때다. 창이 안 떠서 다시 누르게 되므로 반쯤 죽은 인스턴스가
+# 여러 개 쌓인다. 다른 경로가 있어도 모양은 같을 것이라 원인이 아니라
+# 상태를 본다.
+#
+# 정상인 클라이언트의 메인 스레드는 끝까지 산다. 업데이트하려고 나갈 때는
+# 프로세스 전체가 나가므로 이 상태를 거치지 않는다. 10초는 Wine이 스레드를
+# 정리하는 짧은 순간과 구분하려는 여유다.
+reap_half_dead() {
+  local pid=$1 state since=0
+  while [[ -r /proc/$pid/stat ]]; do
+    state=$(sed 's/^.*) //' "/proc/$pid/stat" 2>/dev/null) || return 0
+    if [[ ${state%% *} == Z ]]; then
+      if ((++since >= 10)); then
+        echo "==> the client's main thread is gone and the rest hang; killing it" >&2
+        kill -9 "$pid" 2>/dev/null || true
+        return 0
+      fi
+    else
+      since=0
+    fi
+    sleep 1
+  done
+}
+
 serve_control &
 readonly CONTROL_PID=$!
 trap cleanup EXIT INT TERM HUP
 
-"$WINE" "$EXE"
+"$WINE" "$EXE" &
+client=$!
+reap_half_dead "$client" &
+REAPER_PID=$!
+wait "$client"
 await_update
